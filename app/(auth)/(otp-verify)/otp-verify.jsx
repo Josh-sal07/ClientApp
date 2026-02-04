@@ -24,16 +24,24 @@ export default function OtpVerifyScreen({ route }) {
   const [resendTimer, setResendTimer] = useState(30);
   const [canResend, setCanResend] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
+  const [skipPinSetup, setSkipPinSetup] = useState(false);
 
   /** Load phone from AsyncStorage or route params */
   useEffect(() => {
     const loadPhone = async () => {
-      const routePhone = route?.params?.phone;
-      const storedPhone = await AsyncStorage.getItem("temp_phone");
-      setPhoneNumber(routePhone || storedPhone || "");
+      try {
+        const routePhone = route?.params?.phone;
+        const skipPin = route?.params?.skipPinSetup === 'true';
+        const storedPhone = await AsyncStorage.getItem("temp_phone");
+        
+        setPhoneNumber(routePhone || storedPhone || "");
+        setSkipPinSetup(skipPin);
+        
+      } catch (error) {
+      }
     };
     loadPhone();
-  }, [route?.params?.phone]);
+  }, [route?.params?.phone, route?.params?.skipPinSetup]);
 
   /** Resend countdown */
   useEffect(() => {
@@ -68,74 +76,84 @@ export default function OtpVerifyScreen({ route }) {
     }
   };
 
-  const normalizePhone = (phone) => {
-    const clean = phone.replace(/\D/g, "");
-    return clean.startsWith("9") ? `+63${clean}` : clean;
-  };
+  // ... imports and state ...
 
-  const handleVerifyOtp = async () => {
-    const otpCode = otp.join("");
-    if (otpCode.length !== 6) {
-      Alert.alert("Error", "Enter 6-digit OTP");
-      return;
+const handleVerifyOtp = async () => {
+  const otpCode = otp.join("");
+  if (otpCode.length !== 6) {
+    Alert.alert("Error", "Enter 6-digit OTP");
+    return;
+  }
+
+  try {
+    setOtpLoading(true);
+
+    const clean = phoneNumber.replace(/\D/g, "");
+
+    const response = await fetch(
+      "https://staging.kazibufastnet.com/api/app/otp",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mobile_number: clean,
+          otp: otpCode,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.error || data.success === false) {
+      throw new Error(data.message || "OTP verification failed");
     }
 
-    try {
-      setOtpLoading(true);
+    // ✅ Save phone number permanently
+    await AsyncStorage.setItem("phone", clean);
+    
+    // ✅ Clear temporary phone
+    await AsyncStorage.removeItem("temp_phone");
 
-      const clean = phoneNumber.replace(/\D/g, "");
-
-      const response = await fetch(
-        "https://staging.kazibufastnet.com/api/app/otp",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mobile_number: clean,
-            otp: otpCode,
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (data.error || data.success === false) {
-        throw new Error(data.message || "OTP verification failed");
-      }
-
-      // 🔐 Save authenticated phone
-      await AsyncStorage.setItem("phone", clean);
-
-      // 🔐 Check LOCAL pin state (per phone)
-      const localPinSet = await AsyncStorage.getItem(`pin_set_${clean}`);
-
-      // 🔐 If backend confirms PIN → persist locally
-      if (data.pin_set === true) {
+    // ✅ Check PIN status from multiple sources
+    const backendHasPin = data.hasPin;
+    const localPinSet = await AsyncStorage.getItem(`pin_set_${clean}`);
+    const localHasPin = localPinSet === "true";
+    const skipFromParams = route?.params?.skipPinSetup === 'true';
+    
+    
+    // Decision: If ANY source says PIN exists, go to login
+    const hasPin = backendHasPin || localHasPin || skipFromParams;
+    
+    if (hasPin) {
+      
+      // Ensure local PIN flag is set if backend says PIN exists
+      if (backendHasPin && !localHasPin) {
         await AsyncStorage.setItem(`pin_set_${clean}`, "true");
       }
-
-      // ✅ FINAL DECISION (LOCAL FIRST)
-      const hasPin = data.hasPin;
-
-      if (hasPin) {
-        router.replace("/(auth)/(login)/login");
-      } else {
-        router.replace("/(auth)/(setup-pin)/setup-pin");
-      }
-    } catch (err) {
-      Alert.alert("Error", err.message);
-    } finally {
-      setOtpLoading(false);
+      
+      // IMPORTANT: Pass phone as parameter when navigating to login
+      router.replace({
+        pathname: "/(auth)/(login)/login",
+        params: { phone: clean }
+      });
+    } else {
+      router.replace({
+        pathname: "/(auth)/(setup-pin)/setup-pin",
+        params: { phone: clean }
+      });
     }
-  };
+  } catch (err) {
+    Alert.alert("Error", err.message);
+  } finally {
+    setOtpLoading(false);
+  }
+};
 
   const handleResendOtp = async () => {
-    const cleanPhone = (phone) => phone.replace(/\D/g, "");
-
     if (!canResend) return;
 
     try {
-      const clean = cleanPhone(phoneNumber);
+      const clean = phoneNumber.replace(/\D/g, "");
 
       setOtp(["", "", "", "", "", ""]);
       otpRefs.current[0]?.focus();

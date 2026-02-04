@@ -8,7 +8,6 @@ import {
   View,
   TouchableOpacity,
   Modal,
-  TextInput,
   Keyboard,
   TouchableWithoutFeedback,
   RefreshControl,
@@ -16,26 +15,29 @@ import {
   Alert,
   Image,
   Dimensions,
-  SafeAreaView,
+  StatusBar,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Overlay from "../../../../components/overlay";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../../theme/ThemeContext";
 import { useColorScheme } from "react-native";
 import { useUserStore } from "../../../../store/user";
 import axios from "axios";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { sharedScrollY } from "../../../../shared/sharedScroll";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-const API_BASE_URL = "https://staging.kazibufastnet.com/api/app";
+// Correct API base URLs
+const API_BASE_URL = "https://staging.kazibufastnet.com/api/app/tickets";
 
-// Helper function for user-specific keys - MUST MATCH CHATBOT
+// Helper function for user-specific keys
 const getUserTicketsKey = (userId) => `kazi_support_tickets_${userId}`;
 
 const Ticket = () => {
+  const scrollY = sharedScrollY;
   const user = useUserStore((state) => state.user);
-  const { mode, theme } = useTheme();
+  const { mode } = useTheme();
   const systemColorScheme = useColorScheme();
 
   // Determine effective theme mode
@@ -62,8 +64,8 @@ const Ticket = () => {
       ticketSubmitted: "#21C7B9",
       ticketClosed: "#999",
       ticketPending: "#FF9500",
-      ticketInProgress: "#007AFF",
-      ticketResolved: "#5856D6",
+      ticketInProgress: "#FF9500",
+      ticketResolved: "#aaa9be",
       ticketCompleted: "#5AC8FA",
       modalOverlay: "rgba(0,0,0,0.5)",
       skeleton: "#e5e7eb",
@@ -75,7 +77,7 @@ const Ticket = () => {
       criticalPriority: "#D70015",
     },
     dark: {
-      primary: "#1f6f68",
+      primary: "#35958d",
       secondary: "#00AFA1",
       dark: "#121212",
       white: "#FFFFFF",
@@ -93,8 +95,8 @@ const Ticket = () => {
       ticketSubmitted: "#1f6f68",
       ticketClosed: "#666",
       ticketPending: "#FF9500",
-      ticketInProgress: "#007AFF",
-      ticketResolved: "#5856D6",
+      ticketInProgress: "#FF9500",
+      ticketResolved: "#666",
       ticketCompleted: "#5AC8FA",
       modalOverlay: "rgba(0,0,0,0.7)",
       skeleton: "#2d2d2d",
@@ -113,124 +115,294 @@ const Ticket = () => {
   const [tickets, setTickets] = useState([]);
   const [filteredTickets, setFilteredTickets] = useState([]);
   const [selectedTicket, setSelectedTicket] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [viewingImage, setViewingImage] = useState(null);
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [showStatusFilter, setShowStatusFilter] = useState(false);
   const [ticketStats, setTicketStats] = useState({
     resolved: 0,
-    closed: 0,
+    close: 0,
     in_progress: 0,
     submitted: 0,
   });
 
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const normalizeStatusForUser = (status) => {
+    switch ((status || "").toLowerCase()) {
+      case "for-approval":
+      case "submitted":
+        return "submitted";
 
-  // Status options for filtering
-  const statusOptions = [
-    { label: "Submitted", value: "submitted", icon: "document-text" },
-    { label: "In Progress", value: "in_progress", icon: "sync" },
-    { label: "Resolved", value: "resolved", icon: "checkmark-circle" },
-    { label: "Closed", value: "closed", icon: "close-circle" },
-  ];
+      case "in progress":
+      case "in_progress":
+        return "in_progress";
 
-  // ==================== VIEW SINGLE TICKET ====================
+      case "close":
+      case "resolved":
+        return "resolved";
+
+      default:
+        return "submitted";
+    }
+  };
+
+  // ==================== GET AUTH TOKEN ====================
+  const getToken = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      return token;
+    } catch (err) {
+      return null;
+    }
+  };
+
+  // ==================== FIXED: VIEW SINGLE TICKET DETAILS ====================
   const viewTicket = async (ticketId) => {
     try {
+
       if (!ticketId) {
         Alert.alert("Error", "Ticket ID is required");
         return null;
       }
 
-      const token = await AsyncStorage.getItem("token");
+      const token = await getToken();
       if (!token) {
         Alert.alert("Error", "Authentication required");
         return null;
       }
 
-      // Try to fetch from API first
-      try {
-        const response = await axios.get(`${API_BASE_URL}/tickets/view/${ticketId}`, {
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
+      // FIRST: Try to get the ticket from our state to see what ID we have
+      const localTicket = tickets.find(
+        (t) =>
+          t.id === ticketId ||
+          t.backendId === ticketId ||
+          t.ticketNumber === ticketId,
+      );
 
-        if (response.data && response.data.success) {
-          const ticketData = response.data.data;
-          
-          // Format the ticket data similar to loadTickets
-          const createdAt = ticketData.created_at 
-            ? new Date(ticketData.created_at)
-            : ticketData.createdAt
-              ? new Date(ticketData.createdAt)
-              : new Date();
+      // Determine which ID to send to backend
+      // PRIORITY: backendId > id > ticketNumber
+      let idToSend = null;
 
-          const updatedAt = ticketData.updated_at
-            ? new Date(ticketData.updated_at)
-            : ticketData.updatedAt
-              ? new Date(ticketData.updatedAt)
-              : createdAt;
+      if (localTicket?.backendId) {
+        idToSend = localTicket.backendId; // This is the actual database ID
+      } else if (
+        localTicket?.id &&
+        !localTicket.id.toString().includes("TKT-")
+      ) {
+        // Use id only if it doesn't look like a display number
+        idToSend = localTicket.id;
+      } else {
+        idToSend = ticketId; // Use whatever was passed
+      }
 
-          const formattedTicket = {
-            id: ticketData.id || ticketId,
-            ticketNumber: ticketData.ticket_number || ticketData.id || ticketId,
-            subject: ticketData.subject || ticketData.title || "No Subject",
-            description: ticketData.description || ticketData.message || "No description provided",
-            status: (ticketData.status || "submitted").toLowerCase().trim(),
-            priority: (ticketData.priority || "medium").toLowerCase(),
-            category: ticketData.category || ticketData.type || "General",
+      // Ensure it's a string (some backends prefer strings)
+      idToSend = idToSend.toString();
+
+      // Now call the API with the CORRECT ID
+      const response = await axios.get(`${API_BASE_URL}/view/${idToSend}`, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        timeout: 10000,
+      });
+
+      let ticketData = null;
+
+      // Check different response structures
+      if (response.data) {
+        // Structure 1: response.data.ticket (what your API returns)
+        if (response.data.ticket) {
+          ticketData = response.data.ticket;
+        }
+        // Structure 2: response.data.data (common API pattern)
+        else if (response.data.data) {
+          ticketData = response.data.data;
+        }
+        // Structure 3: response.data itself is the ticket
+        else if (response.data.id || response.data.ticket_number) {
+          ticketData = response.data;
+        }
+      }
+
+      if (!ticketData) {
+        throw new Error("No ticket data in response");
+      }
+
+      // Format the ticket data
+      const createdAt = ticketData.created_at
+        ? new Date(ticketData.created_at)
+        : ticketData.createdAt
+          ? new Date(ticketData.createdAt)
+          : new Date();
+
+      const updatedAt = ticketData.updated_at
+        ? new Date(ticketData.updated_at)
+        : ticketData.updatedAt
+          ? new Date(ticketData.updatedAt)
+          : createdAt;
+
+      // Extract subscription data
+      let subscriptionData = null;
+      if (ticketData.subscription) {
+        subscriptionData = ticketData.subscription;
+      } else if (
+        ticketData.subscription_id &&
+        typeof ticketData.subscription_id === "object"
+      ) {
+        subscriptionData = ticketData.subscription?.subscription_id;
+      }
+
+      const formattedTicket = {
+        id: ticketData.id, // This is the actual backend database ID
+        backendId: ticketData.id, // Store it here too
+        ticketNumber: ticketData.ticket_number || ticketData.id,
+        subject: ticketData.subject || ticketData.title || "No Subject",
+        status: (ticketData.status || "submitted").toLowerCase().trim(),
+        priority: (
+          ticketData.priority_level ||
+          ticketData.priority ||
+          "medium"
+        ).toLowerCase(),
+        category: ticketData.type || ticketData.category || "General",
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        attachments: ticketData.picture
+          ? [ticketData.picture]
+          : ticketData.attachments || ticketData.images || [],
+        assignedTo:
+          ticketData.team_id ||
+          ticketData.assigned_to ||
+          ticketData.assigned_agent ||
+          null,
+        lastResponse: null,
+        responseCount: 0,
+        formattedDate: createdAt.toLocaleDateString(),
+        formattedTime: createdAt.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        source: "api",
+        subscription_id: ticketData.subscription?.subscription_id,
+        subscription_name:
+          subscriptionData?.plan?.[0]?.name ||
+          subscriptionData?.plan?.name ||
+          subscriptionData?.subscription?.subscription_id ||
+          "Unknown",
+      };
+      return formattedTicket;
+    } catch (error) {
+
+      // Return the local ticket as fallback
+      if (user && user.id) {
+        try {
+          const userTicketsKey = getUserTicketsKey(user.id);
+          const storedTickets = await AsyncStorage.getItem(userTicketsKey);
+
+          if (storedTickets) {
+            const localTickets = JSON.parse(storedTickets);
+            const foundTicket = localTickets.find(
+              (t) =>
+                t.id === ticketId ||
+                t.backendId === ticketId ||
+                t.ticketNumber === ticketId,
+            );
+
+            if (foundTicket) {
+              return foundTicket;
+            }
+          }
+        } catch (storageError) {
+        }
+      }
+
+      Alert.alert("Error", `Failed to load ticket: ${error.message}`);
+
+      return null;
+    }
+  };
+  // ==================== FETCH TICKETS FROM API ====================
+  const fetchTicketsFromAPI = async () => {
+    try {
+      const token = await getToken();
+
+      const response = await axios.get(API_BASE_URL, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.data) {
+        let ticketsData = [];
+
+        // Handle different response structures
+        if (Array.isArray(response.data.data)) {
+          ticketsData = response.data.data;
+        } else if (
+          response.data.data &&
+          Array.isArray(response.data.data.tickets)
+        ) {
+          ticketsData = response.data.data.tickets;
+        } else if (
+          response.data.tickets &&
+          Array.isArray(response.data.tickets)
+        ) {
+          ticketsData = response.data.tickets;
+        }
+
+        // Process API tickets - CRITICAL: Use actual database ID
+        const apiTickets = ticketsData.map((ticket) => {
+          // The actual database ID from backend
+          const backendId = ticket.id || ticket.ticket_id;
+
+          // Use the backendId as the primary ID
+          const ticketId = backendId || `API-${Date.now()}-${Math.random()}`;
+
+          const status = ticket.status
+            ? ticket.status.toLowerCase().trim()
+            : null;
+
+          let createdAt = new Date();
+          if (ticket.created_at) {
+            createdAt = new Date(ticket.created_at);
+          } else if (ticket.createdAt) {
+            createdAt = new Date(ticket.createdAt);
+          }
+
+          return {
+            id: ticketId, // Use backend database ID
+            backendId: backendId, // Store it separately
+            ticketNumber: ticket.ticket_number || ticketId,
+            subject: ticket.subject || ticket.title || "No Subject",
+            status: status,
+            priority: (ticket.priority || "medium").toLowerCase(),
+            category: ticket.category || ticket.type || "General",
             createdAt: createdAt,
-            updatedAt: updatedAt,
-            attachments: ticketData.attachments || ticketData.images || [],
-            assignedTo: ticketData.assigned_to || ticketData.assigned_agent || null,
-            lastResponse: ticketData.last_response || null,
-            responseCount: ticketData.response_count || ticketData.replies || 0,
+            updatedAt: ticket.updated_at
+              ? new Date(ticket.updated_at)
+              : createdAt,
+            attachments: ticket.attachments || ticket.images || [],
+            assignedTo: ticket.assigned_to || ticket.assigned_agent || null,
+            lastResponse: ticket.last_response || null,
+            responseCount: ticket.response_count || ticket.replies || 0,
             formattedDate: createdAt.toLocaleDateString(),
             formattedTime: createdAt.toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
             }),
             source: "api",
-            subscription_id: ticketData.subscription_id,
-            subscription_name: ticketData.subscription_name,
+            subscription_id: ticket.subscription?.subscription_id,
+            subscription_name: ticket.subscription_name,
           };
+        });
 
-       
-          return formattedTicket;
-        }
-      } catch (apiError) {
-        
-        
-        // If API fails, try to find in local storage
-        const userTicketsKey = getUserTicketsKey(user.id);
-        const storedTickets = await AsyncStorage.getItem(userTicketsKey);
-        
-        if (storedTickets) {
-          const localTickets = JSON.parse(storedTickets);
-          const foundTicket = localTickets.find(t => 
-            t.id === ticketId || t.ticketNumber === ticketId
-          );
-          
-          if (foundTicket) {
-            return foundTicket;
-          }
-        }
+        return apiTickets;
       }
-
-      // If not found anywhere
-      Alert.alert("Not Found", "Ticket not found or you don't have permission to view it.");
-      return null;
-
+      return [];
     } catch (error) {
-      Alert.alert("Error", "Failed to load ticket details.");
-      return null;
+      return [];
     }
   };
 
@@ -248,89 +420,27 @@ const Ticket = () => {
 
       let allTickets = [];
 
-      // 1. First, try to load from API
-      try {
-        const response = await axios.get(`${API_BASE_URL}/tickets`, {
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          timeout: 8000,
-        });
+      // 1. First, fetch from API
+      const apiTickets = await fetchTicketsFromAPI();
+      if (apiTickets.length === 0) {
+        const userTicketsKey = getUserTicketsKey(user.id);
+        await AsyncStorage.removeItem(userTicketsKey);
 
-        if (response.data && response.data.success) {
-          
-
-          let ticketsData = [];
-
-          if (Array.isArray(response.data.data)) {
-            ticketsData = response.data.data;
-          } else if (
-            response.data.data &&
-            Array.isArray(response.data.data.tickets)
-          ) {
-            ticketsData = response.data.data.tickets;
-          } else if (
-            response.data.tickets &&
-            Array.isArray(response.data.tickets)
-          ) {
-            ticketsData = response.data.tickets;
-          }
-
-          // Process API tickets
-          const apiTickets = ticketsData.map((ticket, index) => {
-            const ticketId = ticket.id || `TKT-API-${Date.now()}-${index}`;
-            
-            // Fix: Extract status from ticket data
-            const status = (ticket.status || "submitted").toLowerCase().trim();
-            
-            let createdAt = new Date();
-            if (ticket.created_at) {
-              createdAt = new Date(ticket.created_at);
-            } else if (ticket.createdAt) {
-              createdAt = new Date(ticket.createdAt);
-            } else if (ticket.date_created) {
-              createdAt = new Date(ticket.date_created);
-            }
-
-            const priority = (ticket.priority || "medium").toLowerCase();
-
-            return {
-              id: ticketId,
-              ticketNumber: ticket.ticket_number || ticketId,
-              subject: ticket.subject || ticket.title || "No Subject",
-              description:
-                ticket.description ||
-                ticket.message ||
-                "No description provided",
-              status: status, // Fixed: using the extracted status
-              priority: priority,
-              category: ticket.category || ticket.type || "General",
-              createdAt: createdAt,
-              updatedAt: ticket.updated_at
-                ? new Date(ticket.updated_at)
-                : createdAt,
-              attachments: ticket.attachments || ticket.images || [],
-              assignedTo: ticket.assigned_to || ticket.assigned_agent || null,
-              lastResponse: ticket.last_response || null,
-              responseCount: ticket.response_count || ticket.replies || 0,
-              formattedDate: createdAt.toLocaleDateString(),
-              formattedTime: createdAt.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              source: "api",
-            };
-          });
-
-          allTickets = [...apiTickets];
-         
-        }
-      } catch (apiError) {
-       
+        setTickets([]);
+        setFilteredTickets([]);
+        calculateStats([]);
+        setLastRefresh(new Date());
+        return;
       }
 
-      // 2. Load from local storage (where chatbot saves)
+      // Process API tickets to ensure they have backendId
+      const processedApiTickets = apiTickets.map((ticket) => ({
+        ...ticket,
+        backendId: ticket.id, // Store the actual database ID
+        id: ticket.id, // Use the actual database ID as id
+      }));
+
+      // 2. Load from local storage
       try {
         const userTicketsKey = getUserTicketsKey(user.id);
         const storedTickets = await AsyncStorage.getItem(userTicketsKey);
@@ -340,75 +450,49 @@ const Ticket = () => {
 
           // Process local tickets
           const processedLocalTickets = localTickets.map((ticket) => {
-            // Convert date strings to Date objects
-            const createdAt = ticket.createdAt 
-              ? new Date(ticket.createdAt)
-              : ticket.created_at 
-                ? new Date(ticket.created_at)
-                : new Date(Date.now());
-                
-            const updatedAt = ticket.updatedAt
-              ? new Date(ticket.updatedAt)
-              : ticket.updated_at
-                ? new Date(ticket.updated_at)
-                : createdAt;
-
-            const status = (ticket.status || "submitted").toLowerCase().trim();
+            // Check if this local ticket has a backendId
+            const hasBackendId =
+              ticket.backendId ||
+              (ticket.id && !ticket.id.toString().includes("TKT-"));
 
             return {
-              id: ticket.id || `TKT-LOCAL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              ticketNumber: ticket.ticketNumber || ticket.id || `TKT-${Date.now()}`,
-              subject: ticket.subject || "No Subject",
-              description: ticket.description || "No description provided",
-              status: status,
-              priority: (ticket.priority || "medium").toLowerCase(),
-              category: ticket.category || "Technical Support",
-              createdAt: createdAt,
-              updatedAt: updatedAt,
-              attachments: ticket.attachments || [],
-              assignedTo: ticket.assignedTo || null,
-              lastResponse: ticket.lastResponse || null,
-              responseCount: ticket.responseCount || 0,
-              formattedDate: createdAt.toLocaleDateString(),
-              formattedTime: createdAt.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              source: "local",
-              subscription_id: ticket.subscription_id,
-              subscription_name: ticket.subscription_name,
+              ...ticket,
+              id: hasBackendId ? ticket.backendId || ticket.id : ticket.id,
+              backendId: ticket.backendId || ticket.id,
             };
           });
 
-          // Merge local tickets with API tickets, avoiding duplicates by ticketNumber
-          const existingTicketNumbers = new Set(allTickets.map(t => t.ticketNumber));
+          // Merge tickets, preferring API tickets
+          const apiTicketIds = new Set(
+            processedApiTickets.map((t) => t.backendId || t.id),
+          );
           const uniqueLocalTickets = processedLocalTickets.filter(
-            t => !existingTicketNumbers.has(t.ticketNumber)
+            (localTicket) =>
+              !apiTicketIds.has(localTicket.backendId || localTicket.id),
           );
 
-          allTickets = [...allTickets, ...uniqueLocalTickets];
+          allTickets =
+            processedApiTickets.length > 0
+              ? [...processedApiTickets, ...uniqueLocalTickets]
+              : processedApiTickets;
+        } else {
+          allTickets = processedApiTickets;
         }
       } catch (storageError) {
-  
+        allTickets = processedApiTickets;
       }
 
-      // Sort tickets by creation date (newest first)
+      // Sort by date
       allTickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
       setTickets(allTickets);
       setFilteredTickets(allTickets);
       calculateStats(allTickets);
       setLastRefresh(new Date());
-
-      if (allTickets.length === 0) {
-      
-      }
     } catch (error) {
-      
       Alert.alert("Error", "Failed to load tickets. Please try again.");
       setTickets([]);
       setFilteredTickets([]);
-      calculateStats([]);
     } finally {
       setLoading(false);
     }
@@ -418,19 +502,46 @@ const Ticket = () => {
   const renderTicketImages = (attachments) => {
     if (!attachments || attachments.length === 0) return null;
 
+    // Filter out invalid attachments and extract URIs
+    const validAttachments = attachments
+      .filter((attachment) => {
+        if (!attachment) return false;
+
+        // Check various possible image source formats
+        const hasUri = attachment.uri || attachment.url || attachment.path;
+        const isString = typeof attachment === "string";
+
+        return hasUri || isString;
+      })
+      .map((attachment) => {
+        // Handle different attachment formats
+        if (typeof attachment === "string") {
+          // If it's already a string URL
+          return attachment;
+        } else if (attachment.uri) {
+          return attachment.uri;
+        } else if (attachment.url) {
+          return attachment.url;
+        } else if (attachment.path) {
+          return attachment.path;
+        }
+        return null;
+      })
+      .filter((uri) => uri && uri.length > 0);
+
+    if (validAttachments.length === 0) return null;
+
     return (
       <View style={styles.imagesContainer}>
         <Text style={[styles.imagesLabel, { color: colors.textLight }]}>
-          Attached Images:
+          Attached Images ({validAttachments.length}):
         </Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.imagesScroll}
         >
-          {attachments.map((attachment, index) => {
-            const imageUri = attachment.uri || attachment.url;
-            if (!imageUri) return null;
+          {validAttachments.map((imageUri, index) => {
 
             return (
               <TouchableOpacity
@@ -446,6 +557,10 @@ const Ticket = () => {
                   source={{ uri: imageUri }}
                   style={styles.imageThumbnail}
                   resizeMode="cover"
+                  onError={(e) => {
+                  }}
+                  onLoad={() => {
+                  }}
                 />
                 <View
                   style={[
@@ -463,53 +578,13 @@ const Ticket = () => {
     );
   };
 
-  // ==================== CLEAR ALL TICKETS ====================
-  const clearAllTickets = async () => {
-    Alert.alert(
-      "Clear All Tickets",
-      "Are you sure you want to clear all your tickets? This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear All",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              if (!user || !user.id) {
-                Alert.alert(
-                  "Error",
-                  "You need to be logged in to clear tickets."
-                );
-                return;
-              }
-
-              // Clear local storage
-              const userTicketsKey = getUserTicketsKey(user.id);
-              await AsyncStorage.removeItem(userTicketsKey);
-
-              // Clear state
-              setTickets([]);
-              setFilteredTickets([]);
-              calculateStats([]);
-
-              Alert.alert("Cleared", "All your tickets have been cleared.");
-            } catch (error) {
-             
-              Alert.alert("Error", "Failed to clear tickets.");
-            }
-          },
-        },
-      ]
-    );
-  };
-
   // ==================== HELPER FUNCTIONS ====================
 
   // Calculate ticket statistics
   const calculateStats = (ticketsList) => {
     const stats = {
       resolved: ticketsList.filter((t) => t.status === "resolved").length,
-      closed: ticketsList.filter((t) => t.status === "closed").length,
+      close: ticketsList.filter((t) => t.status === "close").length,
       in_progress: ticketsList.filter((t) => t.status === "in_progress").length,
       submitted: ticketsList.filter((t) => t.status === "submitted").length,
     };
@@ -518,60 +593,62 @@ const Ticket = () => {
 
   // Get status color
   const getStatusColor = (status) => {
-    const statusMap = {
-      pending: colors.ticketPending,
-      in_progress: colors.ticketInProgress,
-      resolved: colors.ticketResolved,
-      closed: colors.ticketClosed,
-      submitted: colors.ticketSubmitted,
-      completed: colors.ticketCompleted,
-    };
-    return statusMap[status] || colors.primary;
-  };
+    const normalized = normalizeStatusForUser(status);
 
-  // Get priority color
-  const getPriorityColor = (priority) => {
-    const priorityMap = {
-      low: colors.lowPriority,
-      medium: colors.mediumPriority,
-      high: colors.highPriority,
-      critical: colors.criticalPriority,
-    };
-    return priorityMap[priority] || colors.mediumPriority;
+    return {
+      submitted: colors.ticketSubmitted, // teal
+      in_progress: colors.ticketInProgress, // blue
+      resolved: colors.ticketResolved, // purple
+    }[normalized];
   };
 
   // Format status text for display
   const formatStatusText = (status) => {
-    const statusMap = {
-      pending: "Pending",
+    const normalized = normalizeStatusForUser(status);
+
+    return {
+      submitted: "Submitted",
       in_progress: "In Progress",
       resolved: "Resolved",
-      closed: "Closed",
-      submitted: "Submitted",
-      completed: "Completed",
-    };
-    return statusMap[status] || String(status ?? "").replace(/_/g, " ").toUpperCase();
-
+    }[normalized];
   };
 
-  // Format priority text
-  const formatPriorityText = (priority) => {
-    return String(priority ?? "").charAt(0).toUpperCase() + String(priority ?? "").slice(1);
+  // Handle viewing a specific ticket
+  const handleViewTicket = async (ticket) => {
 
-  };
+    // Show the local ticket immediately
+    setSelectedTicket(ticket);
 
-  // Apply status filter
-  const applyStatusFilter = (status) => {
-    setStatusFilter(status);
-    setShowStatusFilter(false);
+    // Fetch latest from API in background
+    if (ticket.id) {
+      const latestTicket = await viewTicket(ticket.id);
+      if (latestTicket) {
 
-    if (status === "all") {
-      setFilteredTickets(tickets);
-    } else {
-      const filtered = tickets.filter(
-        (ticket) => ticket.status.toLowerCase() === status.toLowerCase()
-      );
-      setFilteredTickets(filtered);
+
+        // CRITICAL FIX: Preserve local attachments if API returns empty
+        if (
+          latestTicket.attachments &&
+          latestTicket.attachments.length === 0 &&
+          ticket.attachments &&
+          ticket.attachments.length > 0
+        ) {
+          latestTicket.attachments = ticket.attachments;
+        }
+
+        // Merge the best data: API data with local attachments
+        const mergedTicket = {
+          ...latestTicket,
+          // Keep attachments from local if API doesn't have them
+          attachments:
+            latestTicket.attachments && latestTicket.attachments.length > 0
+              ? latestTicket.attachments
+              : ticket.attachments || [],
+          // Also merge other fields that might be better in local version
+          category: latestTicket.category || ticket.category,
+          priority: latestTicket.priority || ticket.priority,
+        };
+        setSelectedTicket(mergedTicket);
+      }
     }
   };
 
@@ -582,18 +659,11 @@ const Ticket = () => {
     setTimeout(() => setRefreshing(false), 1000);
   }, [user]);
 
-  // Handle viewing a specific ticket
-  const handleViewTicket = async (ticket) => {
-    // First show the ticket from local data
-    setSelectedTicket(ticket);
-    
-    // Then try to fetch latest details from API
-    if (ticket.id) {
-      const latestTicket = await viewTicket(ticket.id);
-      if (latestTicket) {
-        setSelectedTicket(latestTicket);
-      }
-    }
+  // Manual refresh function
+  const handleManualRefresh = async () => {
+    setLoading(true);
+    await loadTickets();
+    setTimeout(() => setLoading(false), 500);
   };
 
   // Load tickets on focus
@@ -602,7 +672,7 @@ const Ticket = () => {
       if (user && user.id) {
         loadTickets();
       }
-    }, [user])
+    }, [user]),
   );
 
   // Format time since last refresh
@@ -621,64 +691,6 @@ const Ticket = () => {
     }
   };
 
-  // Render status filter options
-  const renderStatusFilter = () => {
-    if (!showStatusFilter) return null;
-
-    return (
-      <View
-        style={[
-          styles.statusFilterContainer,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}
-      >
-        {statusOptions.map((option) => (
-          <TouchableOpacity
-            key={option.value}
-            style={[
-              styles.statusOption,
-              statusFilter === option.value && styles.statusOptionSelected,
-              statusFilter === option.value && {
-                backgroundColor: colors.primary + "20",
-              },
-            ]}
-            onPress={() => applyStatusFilter(option.value)}
-          >
-            <Ionicons
-              name={option.icon}
-              size={16}
-              color={
-                statusFilter === option.value
-                  ? colors.primary
-                  : colors.textLight
-              }
-            />
-            <Text
-              style={[
-                styles.statusOptionText,
-                {
-                  color:
-                    statusFilter === option.value
-                      ? colors.primary
-                      : colors.text,
-                },
-              ]}
-            >
-              {option.label}
-            </Text>
-            {option.value !== "all" && (
-              <Text
-                style={[styles.statusOptionCount, { color: colors.textLight }]}
-              >
-                {ticketStats[option.value] || 0}
-              </Text>
-            )}
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
-
   // Render ticket card
   const renderTicketCard = (ticket) => (
     <TouchableOpacity
@@ -689,7 +701,9 @@ const Ticket = () => {
           backgroundColor: colors.surface,
           borderColor: colors.primary,
           borderLeftWidth: 4,
-          borderLeftColor: getStatusColor(ticket.status),
+          borderLeftColor: getStatusColor(
+            normalizeStatusForUser(ticket.status),
+          ),
         },
       ]}
       onPress={() => handleViewTicket(ticket)}
@@ -700,28 +714,35 @@ const Ticket = () => {
           <Text style={[styles.ticketNumber, { color: colors.primary }]}>
             #{ticket.ticketNumber}
           </Text>
+          {ticket.source === "local" && (
+            <View
+              style={[
+                styles.localBadge,
+                { backgroundColor: colors.warning + "20" },
+              ]}
+            >
+              <Text style={[styles.localBadgeText, { color: colors.warning }]}>
+                LOCAL
+              </Text>
+            </View>
+          )}
         </View>
 
         <View
           style={[
             styles.statusBadge,
-            { backgroundColor: getStatusColor(ticket.status) },
+            {
+              backgroundColor: getStatusColor(
+                normalizeStatusForUser(ticket.status),
+              ),
+            },
           ]}
         >
           <Text style={styles.statusText}>
-            {formatStatusText(ticket.status)}
+            {formatStatusText(normalizeStatusForUser(ticket.status))}
           </Text>
         </View>
       </View>
-      
-      {ticket.subscription_id && (
-        <Text
-          style={[styles.subjectText1, { color: colors.textLight }]}
-          numberOfLines={1}
-        >
-          Subscription ID: {ticket.subscription_id}
-        </Text>
-      )}
 
       <Text
         style={[styles.subjectText, { color: colors.text }]}
@@ -769,88 +790,62 @@ const Ticket = () => {
     </TouchableOpacity>
   );
 
-  // Render skeleton loading cards
-  const SkeletonTicket = () => (
+  // Render empty state with refresh button
+  const renderEmptyState = () => (
     <View
       style={[
-        styles.skeletonCard,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
+        styles.emptyContainer,
+        { backgroundColor: colors.surface },
       ]}
     >
-      <View
-        style={[styles.skeletonHeader, { backgroundColor: colors.skeleton }]}
-      />
-      <View
-        style={[styles.skeletonLine, { backgroundColor: colors.skeleton }]}
-      />
-      <View
-        style={[styles.skeletonFooter, { backgroundColor: colors.skeleton }]}
-      />
-    </View>
-  );
-
-  // Render empty state
-  const renderEmptyState = () => (
-    <View style={[styles.emptyContainer, { backgroundColor: colors.surface }]}>
-      <Ionicons
-        name={isSearching ? "search" : user ? "document-text" : "person-circle"}
-        size={60}
-        color={colors.gray}
-      />
+      {/* Sad face emoji */}
+      <Text style={styles.sadEmoji}>🧾</Text>
+      
       <Text style={[styles.emptyText, { color: colors.text }]}>
-        {isSearching
-          ? `No tickets found for "${searchQuery}"`
-          : user
-            ? "No tickets found"
-            : "Please login to view tickets"}
+        No tickets found
       </Text>
-      <Text style={[styles.emptySubtext, { color: colors.textLight }]}>
-        {isSearching
-          ? "Try a different search term"
-          : user
-            ? "Create your first support ticket"
-            : "Login to create and view tickets"}
+      <Text
+        style={[styles.emptySubtext, { color: colors.textLight }]}
+      >
+        {statusFilter !== "all"
+          ? `No ${formatStatusText(statusFilter).toLowerCase()} tickets`
+          : "You don't have any support tickets yet"}
       </Text>
-
-      {isSearching && (
-        <TouchableOpacity
-          onPress={clearSearch}
-          style={[styles.backButton, { backgroundColor: colors.primary }]}
-        >
-          <Text style={styles.backButtonText}>Clear Search</Text>
-        </TouchableOpacity>
-      )}
-
-      {!isSearching && user && (
-        <TouchableOpacity
-          onPress={onRefresh}
-          style={[
-            styles.refreshEmptyButton,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.primary,
-            },
-          ]}
-        >
-          <Ionicons name="refresh" size={18} color={colors.primary} />
-          <Text
-            style={[styles.refreshEmptyButtonText, { color: colors.primary }]}
-          >
-            Refresh
-          </Text>
-        </TouchableOpacity>
-      )}
+      
+      {/* Refresh Button */}
+      <TouchableOpacity
+        style={[
+          styles.refreshButton,
+          { backgroundColor: colors.primary },
+        ]}
+        onPress={handleManualRefresh}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="refresh" size={20} color={colors.white} />
+        <Text style={[styles.refreshButtonText, { color: colors.white }]}>
+          Refresh Tickets
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 
   return (
     <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-       
-        <Overlay />
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor="transparent"
+          translucent={true}
+        />
+
+        {/* Header Section - Same as Profile */}
+        <View
+          style={[styles.profileHeader, { backgroundColor: colors.primary }]}
+        >
+          <Text style={[styles.headerTitle, { color: colors.white }]}>
+            Support Tickets
+          </Text>
+        </View>
 
         <Animated.ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -868,18 +863,9 @@ const Ticket = () => {
           scrollEventThrottle={16}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: false }
+            { useNativeDriver: false },
           )}
         >
-          <View style={styles.titleSection}>
-            <Text style={[styles.mainTitle, { color: colors.text }]}>
-              Kazibufast Network
-            </Text>
-            <Text style={[styles.subTitle, { color: colors.textLight }]}>
-              Support Tickets
-            </Text>
-          </View>
-
           {/* Tickets List */}
           <View style={styles.sectionContainer}>
             <View style={styles.sectionHeader}>
@@ -890,73 +876,25 @@ const Ticket = () => {
               </Text>
 
               <View style={styles.headerRight}>
-                {refreshing ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Text style={[styles.ticketCount, { color: colors.primary }]}>
-                    {filteredTickets.length} shown
-                  </Text>
-                )}
+                <Text style={[styles.ticketCount, { color: colors.primary }]}>
+                  {filteredTickets.length} tickets
+                </Text>
               </View>
             </View>
 
-            {loading || refreshing ? (
-              <>
-                {[...Array(3)].map((_, i) => (
-                  <SkeletonTicket key={i} />
-                ))}
-              </>
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.textLight }]}>
+                  Loading tickets...
+                </Text>
+              </View>
             ) : filteredTickets.length === 0 ? (
               renderEmptyState()
             ) : (
               filteredTickets.map(renderTicketCard)
             )}
           </View>
-
-          {/* Last Updated Info */}
-          {tickets.length > 0 && (
-            <View
-              style={[
-                styles.infoMessage,
-                {
-                  backgroundColor: colors.surface,
-                  borderLeftColor: colors.primary,
-                },
-              ]}
-            >
-              <Ionicons
-                name="information-circle"
-                size={18}
-                color={colors.primary}
-              />
-              <Text style={[styles.infoText, { color: colors.textLight }]}>
-                Last updated {formatTimeSinceRefresh()}
-              </Text>
-            </View>
-          )}
-
-          {/* Clear All Button */}
-          {user && user.id && tickets.length > 0 && (
-            <TouchableOpacity
-              onPress={clearAllTickets}
-              style={[
-                styles.clearAllButton,
-                {
-                  backgroundColor: colors.clearButton + "20",
-                  borderColor: colors.clearButton,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.clearAllButtonText,
-                  { color: colors.clearButton },
-                ]}
-              >
-                Clear All Tickets
-              </Text>
-            </TouchableOpacity>
-          )}
         </Animated.ScrollView>
 
         {/* Ticket Detail Modal */}
@@ -1001,16 +939,14 @@ const Ticket = () => {
                 contentContainerStyle={styles.modalScrollContent}
               >
                 {/* Ticket ID */}
-                <Text
-                  style={[styles.modalLabel, { color: colors.textLight }]}
-                >
+                <Text style={[styles.modalLabel, { color: colors.textLight }]}>
                   TICKET NUMBER
                 </Text>
                 <Text style={[styles.modalValue, { color: colors.text }]}>
                   #{selectedTicket?.ticketNumber}
                 </Text>
 
-                {/* Status & Priority */}
+                {/* Status */}
                 <View style={styles.modalStatusRow}>
                   <View style={styles.modalStatusColumn}>
                     <Text
@@ -1023,7 +959,7 @@ const Ticket = () => {
                         styles.modalStatusBadge,
                         {
                           backgroundColor: getStatusColor(
-                            selectedTicket?.status
+                            selectedTicket?.status,
                           ),
                         },
                       ]}
@@ -1037,30 +973,27 @@ const Ticket = () => {
 
                 {/* Source Badge */}
                 {selectedTicket?.source === "local" && (
-                  <>
-                  </>
+                  <View style={styles.sourceInfo}>
+                    <Ionicons
+                      name="information-circle"
+                      size={16}
+                      color={colors.warning}
+                    />
+                    <Text
+                      style={[styles.sourceText, { color: colors.warning }]}
+                    >
+                      This ticket is stored locally and may not be synced with
+                      the server
+                    </Text>
+                  </View>
                 )}
 
                 {/* Subject */}
-                <Text
-                  style={[styles.modalLabel, { color: colors.textLight }]}
-                >
+                <Text style={[styles.modalLabel, { color: colors.textLight }]}>
                   SUBJECT
                 </Text>
                 <Text style={[styles.modalSubject, { color: colors.text }]}>
                   {selectedTicket?.subject}
-                </Text>
-
-                {/* Description */}
-                <Text
-                  style={[styles.modalLabel, { color: colors.textLight }]}
-                >
-                  DESCRIPTION
-                </Text>
-                <Text
-                  style={[styles.modalDescription, { color: colors.text }]}
-                >
-                  {selectedTicket?.description}
                 </Text>
 
                 {/* Subscription Info */}
@@ -1069,29 +1002,29 @@ const Ticket = () => {
                     <Text
                       style={[styles.modalLabel, { color: colors.textLight }]}
                     >
-                      SUBSCRIPTION ID/PLAN
+                      SUBSCRIPTION
                     </Text>
                     <Text style={[styles.modalValue, { color: colors.text }]}>
                       ID: {selectedTicket.subscription_id}
-                      {selectedTicket.subscription_name && 
+                      {selectedTicket.subscription_name &&
                         ` • ${selectedTicket.subscription_name}`}
                     </Text>
                   </>
                 )}
 
-                {/* Images/Attachments */}
+                {/* Images/Attachments - FIXED: This should now display properly */}
                 {selectedTicket?.attachments &&
                   selectedTicket.attachments.length > 0 &&
                   renderTicketImages(selectedTicket.attachments)}
 
                 {/* Date Information */}
-                <Text
-                  style={[styles.modalLabel, { color: colors.textLight }]}
-                >
+                <Text style={[styles.modalLabel, { color: colors.textLight }]}>
                   CREATED ON
                 </Text>
                 <Text style={[styles.modalValue, { color: colors.text }]}>
-                  {selectedTicket?.createdAt.toLocaleString()}
+                  {selectedTicket?.createdAt
+                    ? selectedTicket.createdAt.toLocaleString()
+                    : "Date not available"}
                 </Text>
 
                 {/* Response Count */}
@@ -1137,33 +1070,38 @@ const Ticket = () => {
           statusBarTranslucent
           onRequestClose={() => setImageModalVisible(false)}
         >
-          <SafeAreaView style={[styles.fullImageModal, { backgroundColor: '#000' }]}>
-            <View style={styles.fullImageHeader}>
-              <TouchableOpacity
-                style={[
-                  styles.fullImageCloseButton,
-                  { backgroundColor: colors.imageOverlay },
-                ]}
-                onPress={() => setImageModalVisible(false)}
-              >
-                <Ionicons name="close" size={28} color="#fff" />
-              </TouchableOpacity>
-            </View>
+          <View style={[styles.fullImageModal, { backgroundColor: "#000" }]}>
+            <SafeAreaView style={styles.fullImageSafeArea}>
+              <View style={styles.fullImageHeader}>
+                <TouchableOpacity
+                  style={[
+                    styles.fullImageCloseButton,
+                    { backgroundColor: colors.imageOverlay },
+                  ]}
+                  onPress={() => setImageModalVisible(false)}
+                >
+                  <Ionicons name="close" size={28} color="#fff" />
+                </TouchableOpacity>
+              </View>
 
-            {viewingImage && (
-              <Image
-                source={{ uri: viewingImage }}
-                style={styles.fullImage}
-                resizeMode="contain"
-              />
-            )}
+              {viewingImage && (
+                <Image
+                  source={{ uri: viewingImage }}
+                  style={styles.fullImage}
+                  resizeMode="contain"
+                  onError={(e) => {
+                    Alert.alert("Error", "Failed to load image");
+                  }}
+                />
+              )}
 
-            <View style={styles.fullImageFooter}>
-              <Text style={styles.fullImageInfo}>
-                Pinch to zoom • Swipe to close
-              </Text>
-            </View>
-          </SafeAreaView>
+              <View style={styles.fullImageFooter}>
+                <Text style={styles.fullImageInfo}>
+                  Pinch to zoom • Swipe to close
+                </Text>
+              </View>
+            </SafeAreaView>
+          </View>
         </Modal>
       </View>
     </TouchableWithoutFeedback>
@@ -1174,136 +1112,34 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  titleSection: {
+  // Consistent Header with Profile Screen
+  profileHeader: {
+    paddingTop: 45,
+    paddingBottom: 25,
+    paddingHorizontal: 24,
+    marginBottom: 10,
+    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 20,
-    marginTop: 10,
   },
-  mainTitle: {
+  headerTitle: {
     fontSize: 24,
-    fontWeight: "bold",
-  },
-  subTitle: {
-    fontSize: 15,
     fontWeight: "600",
-    marginTop: 5,
+    letterSpacing: 0.5,
   },
-  statsContainer: {
-    marginBottom: 20,
-    paddingVertical: 5,
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    paddingTop: 10,
   },
-  statCard: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    padding: 12,
-    marginRight: 10,
+  loadingContainer: {
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
+    paddingVertical: 40,
   },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  searchFilterContainer: {
-    flexDirection: "row",
-    marginBottom: 15,
-    gap: 10,
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-  },
-  searchIcon: {
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
+  loadingText: {
+    marginTop: 10,
     fontSize: 14,
-    padding: 0,
-  },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  filterIndicator: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusFilterContainer: {
-    position: "absolute",
-    top: 180,
-    left: 20,
-    right: 20,
-    borderRadius: 12,
-    padding: 8,
-    zIndex: 100,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
-    borderWidth: 1,
-  },
-  statusOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 4,
-  },
-  statusOptionSelected: {
-    borderWidth: 1,
-  },
-  statusOptionText: {
-    fontSize: 14,
-    fontWeight: "500",
-    marginLeft: 10,
-    flex: 1,
-  },
-  statusOptionCount: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  searchInfo: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 15,
-  },
-  searchResultsText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  clearSearchText: {
-    fontSize: 14,
-    fontWeight: "500",
   },
   sectionContainer: {
     marginTop: 10,
@@ -1382,17 +1218,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     lineHeight: 22,
   },
-  subjectText1: {
-    fontSize: 14,
-    fontWeight: "400",
-    marginBottom: 10,
-    lineHeight: 22,
-  },
-  descriptionText: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
   ticketFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1438,47 +1263,47 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 50,
-    borderRadius: 12,
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    borderRadius: 16,
     marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
+  },
+  sadEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
   },
   emptyText: {
     textAlign: "center",
-    marginTop: 15,
-    fontSize: 16,
-    fontWeight: "500",
-    marginBottom: 5,
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 8,
   },
   emptySubtext: {
     textAlign: "center",
     fontSize: 14,
-    marginBottom: 20,
+    marginBottom: 24,
+    lineHeight: 20,
   },
-  backButton: {
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
+    borderRadius: 12,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  backButtonText: {
-    color: "#fff",
+  refreshButtonText: {
+    fontSize: 15,
     fontWeight: "600",
-    fontSize: 14,
-  },
-  refreshEmptyButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 10,
-  },
-  refreshEmptyButtonText: {
-    fontWeight: "600",
-    fontSize: 14,
-    marginLeft: 8,
   },
   infoMessage: {
     flexDirection: "row",
@@ -1493,29 +1318,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     flex: 1,
     lineHeight: 16,
-  },
-  skeletonCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  skeletonHeader: {
-    height: 14,
-    width: "40%",
-    borderRadius: 6,
-    marginBottom: 12,
-  },
-  skeletonLine: {
-    height: 16,
-    width: "80%",
-    borderRadius: 6,
-    marginBottom: 10,
-  },
-  skeletonFooter: {
-    height: 12,
-    width: "30%",
-    borderRadius: 6,
   },
   modalOverlay: {
     flex: 1,
@@ -1600,37 +1402,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "bold",
   },
-  modalPriorityBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    alignSelf: "flex-start",
-  },
-  modalPriorityText: {
-    fontSize: 11,
-    fontWeight: "bold",
-  },
-  localSourceBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    alignSelf: "flex-start",
-    marginTop: 8,
-  },
-  localSourceText: {
-    fontSize: 11,
-    fontWeight: "bold",
-  },
-  clearAllButton: {
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 20,
+  sourceInfo: {
+    flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#FFA72620",
+    marginVertical: 10,
   },
-  clearAllButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
+  sourceText: {
+    fontSize: 12,
+    marginLeft: 8,
+    flex: 1,
   },
   imagesContainer: {
     marginTop: 12,
@@ -1667,6 +1450,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#000",
   },
+  fullImageSafeArea: {
+    flex: 1,
+  },
   fullImageHeader: {
     position: "absolute",
     top: 50,
@@ -1683,6 +1469,7 @@ const styles = StyleSheet.create({
   fullImage: {
     flex: 1,
     width: SCREEN_WIDTH,
+    height: "100%",
   },
   fullImageFooter: {
     position: "absolute",

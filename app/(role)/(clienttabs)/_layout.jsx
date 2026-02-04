@@ -6,23 +6,29 @@ import {
   View,
   Animated,
   Dimensions,
-  PanResponder,
   ActivityIndicator,
-  Image,
   TouchableOpacity,
   Text,
   useColorScheme,
 } from "react-native";
-import { useRef, useState, useCallback, useEffect } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useRef, useState, useEffect } from "react";
 import { useTheme } from "../../../theme/ThemeContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { sharedScrollY, resetScrollY } from "../../../shared/sharedScroll";
+import ChatBot from "../../../components/overlay";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
 export default function ClientTabsLayout() {
   const router = useRouter();
   const { mode, theme } = useTheme();
   const systemColorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
+  const scrollDirection = useRef("up"); // 'up' or 'down'
+  const lastScrollY = useRef(0);
+
+  // Track if layout is mounted
+  const [isMounted, setIsMounted] = useState(false);
 
   // Determine effective theme mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
@@ -87,11 +93,70 @@ export default function ClientTabsLayout() {
   const [floatingButtonAnim] = useState(new Animated.Value(1));
   const [floatingButtonTranslateY] = useState(new Animated.Value(0));
 
-  // Tab bar animation for hide/show
-  const tabBarTranslateY = useRef(new Animated.Value(0)).current;
-  const [tabBarVisible, setTabBarVisible] = useState(true);
-  const lastScrollY = useRef(0);
-  const scrollThreshold = 50;
+  // Use the shared scrollY
+  const scrollY = sharedScrollY;
+
+  const tabBarAnim = useRef(new Animated.Value(0)).current;
+  const qrButtonAnim = useRef(new Animated.Value(0)).current; // 0 = visible, 1 = hidden
+
+ useEffect(() => {
+  const id = scrollY.addListener(({ value }) => {
+    const currentY = value;
+
+    // ✅ RULE 1: ALWAYS SHOW when at top
+    if (currentY <= 0) {
+      Animated.timing(tabBarAnim, {
+        toValue: 0,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
+
+      Animated.timing(qrButtonAnim, {
+        toValue: 0,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
+
+      lastScrollY.current = 0;
+      return;
+    }
+
+    // ⬇️ scrolling DOWN → hide
+    if (currentY > lastScrollY.current + 1) {
+      Animated.timing(tabBarAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+
+      Animated.timing(qrButtonAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+    }
+
+    // ⬆️ scrolling UP → show
+    if (currentY < lastScrollY.current - 1) {
+      Animated.timing(tabBarAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+
+      Animated.timing(qrButtonAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+    }
+
+    lastScrollY.current = currentY;
+  });
+
+  return () => scrollY.removeListener(id);
+}, []);
+
 
   // Track current route to prevent double navigation
   const [currentRoute, setCurrentRoute] = useState("home");
@@ -101,6 +166,33 @@ export default function ClientTabsLayout() {
   const loadingLineAnim = useRef(new Animated.Value(0)).current;
   const [showLoadingLine, setShowLoadingLine] = useState(false);
 
+  // Calculate tab bar height with safe area
+  const tabBarHeight = 60;
+  const totalTabBarHeight = tabBarHeight + insets.bottom;
+
+  // Set mounted state when component mounts
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Reset tab bar when switching tabs
+useEffect(() => {
+  resetScrollY();
+
+  Animated.timing(tabBarAnim, {
+    toValue: 0,
+    duration: 120,
+    useNativeDriver: true,
+  }).start();
+
+  Animated.timing(qrButtonAnim, {
+    toValue: 0,
+    duration: 120,
+    useNativeDriver: true,
+  }).start();
+}, [currentRoute]);
+
+
   // Start loading line animation
   const startLoadingLine = () => {
     setShowLoadingLine(true);
@@ -108,11 +200,10 @@ export default function ClientTabsLayout() {
 
     Animated.timing(loadingLineAnim, {
       toValue: 1,
-      duration: 1000, // 1 second animation
+      duration: 1000,
       useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished) {
-        // Hide loading line after animation completes
         setTimeout(() => {
           setShowLoadingLine(false);
         }, 100);
@@ -122,7 +213,7 @@ export default function ClientTabsLayout() {
 
   // Handle QR scanner press
   const handleQrPress = () => {
-    if (isNavigating) return;
+    if (isNavigating || !isMounted) return;
 
     setIsNavigating(true);
     startLoadingLine();
@@ -141,345 +232,290 @@ export default function ClientTabsLayout() {
       }),
     ]).start();
 
-    // Show tab bar if hidden
-    if (!tabBarVisible) {
-      showTabBar();
-    }
+    // Reset scrollY to show tab bar
+    resetScrollY();
 
     // Show loading indicator for 1 second, then navigate
     setTimeout(() => {
-      router.push("/(clienttabs)/qrscanner");
-      // Hide loading after navigation completes
-      setTimeout(() => {
+      if (isMounted) {
+        router.push("/(clienttabs)/qrscanner");
+        // Hide loading after navigation completes
+        setTimeout(() => {
+          setIsNavigating(false);
+        }, 300);
+      } else {
         setIsNavigating(false);
-      }, 300);
+      }
     }, 1000);
   };
 
   // Handle regular tab press
   const handleTabPress = (routeName) => {
-    // Prevent double navigation
-    if (isNavigating || currentRoute === routeName) return;
+    // Prevent double navigation or navigation before mount
+    if (isNavigating || currentRoute === routeName || !isMounted) return;
 
     setIsNavigating(true);
     setCurrentRoute(routeName);
     startLoadingLine();
 
-    // Show tab bar if hidden
-    if (!tabBarVisible) {
-      showTabBar();
-    }
+    // Reset scrollY to show tab bar when switching tabs
+    resetScrollY();
 
     // Show loading indicator for 1 second, then navigate
     setTimeout(() => {
-      router.push(`/(clienttabs)/${routeName}`);
-      // Hide loading after navigation completes
-      setTimeout(() => {
+      if (isMounted) {
+        router.push(`/(clienttabs)/${routeName}`);
+        // Hide loading after navigation completes
+        setTimeout(() => {
+          setIsNavigating(false);
+        }, 300);
+      } else {
         setIsNavigating(false);
-      }, 300);
+      }
     }, 1000);
   };
 
-  // Hide/show tab bar based on scroll
-  const handleScroll = useCallback(
-    (event) => {
-      const currentScrollY = event.nativeEvent.contentOffset.y;
-      const scrollDirection =
-        currentScrollY > lastScrollY.current ? "down" : "up";
-      const scrollDistance = Math.abs(currentScrollY - lastScrollY.current);
 
-      if (scrollDistance > scrollThreshold) {
-        if (scrollDirection === "down" && tabBarVisible) {
-          hideTabBar();
-        } else if (scrollDirection === "up" && !tabBarVisible) {
-          showTabBar();
-        }
-      }
-
-      lastScrollY.current = currentScrollY;
-    },
-    [tabBarVisible],
-  );
-
-  const hideTabBar = () => {
-    setTabBarVisible(false);
-    Animated.parallel([
-      Animated.timing(tabBarTranslateY, {
-        toValue: 100,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(floatingButtonTranslateY, {
-        toValue: 150,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const showTabBar = () => {
-    setTabBarVisible(true);
-    Animated.parallel([
-      Animated.timing(tabBarTranslateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(floatingButtonTranslateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  // Simplified swipe gesture handler - only for horizontal swipes
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Only respond to clear horizontal swipes
-        return Math.abs(gestureState.dx) > 30 && Math.abs(gestureState.dy) < 10;
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        const swipeDistance = gestureState.dx;
-
-        // Define tab order for swiping
-        const tabOrder = ["home", "subscriptions", "tickets", "account"];
-        const currentIndex = tabOrder.indexOf(currentRoute);
-
-        if (swipeDistance < -30 && currentIndex < tabOrder.length - 1) {
-          // Swipe left - go to next tab
-          handleTabPress(tabOrder[currentIndex + 1]);
-        } else if (swipeDistance > 30 && currentIndex > 0) {
-          // Swipe right - go to previous tab
-          handleTabPress(tabOrder[currentIndex - 1]);
-        }
-      },
-    }),
-  ).current;
-
-  // Floating dynamic icons
-  const dynamicIcons = Array.from({ length: 7 }).map((_, i) => {
-    const size = 20 + Math.random() * 60;
-    const top = Math.random() * (height - size);
-    const left = Math.random() * (width - size);
-    const opacity =
-      effectiveMode === "dark"
-        ? 0.02 + Math.random() * 0.05
-        : 0.05 + Math.random() * 0.1;
+  // Custom Tab Label Component
+  const CustomTabLabel = ({ children, color, focused }) => {
     return (
-      <Image
-        key={`dynamic-icon-${i}`}
-        style={{
-          position: "absolute",
-          width: size,
-          height: size,
-          top,
-          left,
-          opacity,
-          tintColor: colors.primary,
-        }}
-        resizeMode="contain"
-      />
+      <Text
+        style={[styles.tabLabel, { color }, focused && styles.tabLabelFocused]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+      >
+        {children}
+      </Text>
     );
-  });
+  };
 
   return (
-    <SafeAreaView
-      style={[styles.safearea, { backgroundColor: colors.background }]}
-    >
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar
         barStyle={effectiveMode === "dark" ? "light-content" : "dark-content"}
-        backgroundColor={colors.primary}
+        backgroundColor="transparent"
+        translucent={true}
       />
+      <ChatBot/>
 
-      <View
-        style={[styles.container, { backgroundColor: colors.background }]}
-        {...panResponder.panHandlers}
-      >
-        {/* Loading Line at the very top */}
-        {showLoadingLine && (
-          <View style={styles.loadingLineContainer}>
-            <Animated.View
-              style={[
-                styles.loadingLine,
-                {
-                  backgroundColor: colors.loadingIndicator,
-                  transform: [
-                    {
-                      translateX: loadingLineAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-width, width],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            />
-          </View>
-        )}
-
-        {/* Main content */}
-        <Tabs
-          screenOptions={{
-            headerShown: false,
-            tabBarStyle: [
-              styles.tabBar,
-              {
-                transform: [{ translateY: tabBarTranslateY }],
-                opacity: tabBarVisible ? 1 : 0,
-                backgroundColor: colors.tabBar,
-                borderTopColor: colors.tabBarBorder,
-              },
-            ],
-            tabBarActiveTintColor: colors.tabActive,
-            tabBarInactiveTintColor: colors.tabInactive,
-            tabBarLabelStyle: styles.tabLabel,
-            tabBarItemStyle: styles.tabItem,
-          }}
-        >
-          {/* Home Tab */}
-          <Tabs.Screen
-            name="home/index"
-            options={{
-              title: "Home",
-              tabBarIcon: ({ color, size }) => (
-                <Ionicons name="home" size={size} color={color} />
-              ),
-            }}
-            listeners={{
-              tabPress: (e) => {
-                e.preventDefault();
-                handleTabPress("home");
-              },
-            }}
-          />
-
-          {/* Subscriptions Tab */}
-          <Tabs.Screen
-            name="subscriptions/index"
-            options={{
-              title: "Subscriptions",
-              tabBarIcon: ({ color, size }) => (
-                <Ionicons name="receipt" size={size} color={color} />
-              ),
-            }}
-            listeners={{
-              tabPress: (e) => {
-                e.preventDefault();
-                handleTabPress("subscriptions");
-              },
-            }}
-          />
-
-          {/* QR Scanner Tab - Hidden from tab bar */}
-          <Tabs.Screen
-            name="qrscanner/index"
-            options={{
-              title: "Scan",
-              tabBarStyle: { display: "none" },
-              tabBarButton: () => null,
-            }}
-          />
-
-          {/* Tickets Tab */}
-          <Tabs.Screen
-            name="tickets/index"
-            options={{
-              title: "Tickets",
-              tabBarIcon: ({ color, size }) => (
-                <Ionicons name="ticket" size={size} color={color} />
-              ),
-            }}
-            listeners={{
-              tabPress: (e) => {
-                e.preventDefault();
-                handleTabPress("tickets");
-              },
-            }}
-          />
-
-          {/* Account Tab */}
-          <Tabs.Screen
-            name="account/index"
-            options={{
-              title: "Account",
-              tabBarIcon: ({ color, size }) => (
-                <Ionicons name="person" size={size} color={color} />
-              ),
-            }}
-            listeners={{
-              tabPress: (e) => {
-                e.preventDefault();
-                handleTabPress("account");
-              },
-            }}
-          />
-        </Tabs>
-
-        {/* Loading Indicator - Semi-transparent overlay */}
-        {isNavigating && (
-          <View style={styles.loadingOverlay}>
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.loadingIndicator} />
-              <Text style={[styles.loadingText, { color: colors.text }]}>
-                Loading...
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Floating QR Code Scanner Button */}
-        <Animated.View
-          style={[
-            styles.floatingButtonContainer,
-            {
-              transform: [
-                { scale: floatingButtonAnim },
-                { translateY: floatingButtonTranslateY },
-              ],
-            },
-          ]}
-        >
-          <TouchableOpacity
+      {/* Loading Line at the very top */}
+      {showLoadingLine && (
+        <View style={styles.loadingLineContainer}>
+          <Animated.View
             style={[
-              styles.floatingButton,
+              styles.loadingLine,
               {
-                backgroundColor: colors.floatingButton,
-                borderColor: colors.floatingButtonBorder,
+                backgroundColor: colors.loadingIndicator,
+                transform: [
+                  {
+                    translateX: loadingLineAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-width, width],
+                    }),
+                  },
+                ],
               },
             ]}
-            onPress={handleQrPress}
-            activeOpacity={0.8}
-            disabled={isNavigating}
-          >
-            <View style={styles.floatingButtonInner}>
-              <Ionicons name="qr-code" size={18} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-          <Text
-            style={[styles.floatingButtonLabel, { color: colors.textLight }]}
-          >
-            Scan
-          </Text>
-        </Animated.View>
+          />
+        </View>
+      )}
 
-        {/* Dynamic floating icons */}
-        {dynamicIcons}
-      </View>
-    </SafeAreaView>
+      {/* Main content */}
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: [
+            styles.tabBar,
+            {
+              transform: [
+                {
+                  translateY: tabBarAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 100], // Adjust this value based on your tab bar height
+                  }),
+                },
+              ],
+              opacity: tabBarAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 0],
+              }),
+              backgroundColor: colors.tabBar,
+              borderTopColor: colors.tabBarBorder,
+              height: totalTabBarHeight,
+              paddingBottom: insets.bottom,
+              paddingHorizontal: 4,
+            },
+          ],
+          tabBarActiveTintColor: colors.tabActive,
+          tabBarInactiveTintColor: colors.tabInactive,
+          tabBarLabelStyle: styles.tabLabel,
+          tabBarItemStyle: styles.tabItem,
+        }}
+      >
+        {/* Home Tab */}
+        <Tabs.Screen
+          name="home/index"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="home" size={size} color={color} />
+            ),
+            tabBarLabel: ({ color, children, focused }) => (
+              <CustomTabLabel color={color} focused={focused}>
+                {children}
+              </CustomTabLabel>
+            ),
+          }}
+          listeners={{
+            tabPress: (e) => {
+              e.preventDefault();
+              handleTabPress("home");
+            },
+          }}
+        />
+
+        {/* Subscriptions Tab */}
+        <Tabs.Screen
+          name="subscriptions/index"
+          options={{
+            title: "Subscriptions",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="receipt" size={size} color={color} />
+            ),
+            tabBarLabel: ({ color, children, focused }) => (
+              <CustomTabLabel color={color} focused={focused}>
+                {children}
+              </CustomTabLabel>
+            ),
+          }}
+          listeners={{
+            tabPress: (e) => {
+              e.preventDefault();
+              handleTabPress("subscriptions");
+            },
+          }}
+        />
+
+        {/* QR Scanner Tab - Hidden from tab bar */}
+        <Tabs.Screen
+          name="qrscanner/index"
+          options={{
+            title: "Scan",
+            tabBarStyle: { display: "none" },
+            tabBarButton: () => null,
+            
+          }}
+        />
+
+        {/* Tickets Tab */}
+        <Tabs.Screen
+          name="tickets/index"
+          options={{
+            title: "Tickets",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="ticket" size={size} color={color} />
+            ),
+            tabBarLabel: ({ color, children, focused }) => (
+              <CustomTabLabel color={color} focused={focused}>
+                {children}
+              </CustomTabLabel>
+            ),
+          }}
+          listeners={{
+            tabPress: (e) => {
+              e.preventDefault();
+              handleTabPress("tickets");
+            },
+          }}
+        />
+
+        {/* Account Tab */}
+        <Tabs.Screen
+          name="account/index"
+          options={{
+            title: "Profile",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="person" size={size} color={color} />
+            ),
+            tabBarLabel: ({ color, children, focused }) => (
+              <CustomTabLabel color={color} focused={focused}>
+                {children}
+              </CustomTabLabel>
+            ),
+          }}
+          listeners={{
+            tabPress: (e) => {
+              e.preventDefault();
+              handleTabPress("account");
+            },
+          }}
+        />
+      </Tabs>
+
+      {/* Loading Indicator */}
+      {isNavigating && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.loadingIndicator} />
+            <Text style={[styles.loadingText, { color: colors.text }]}>
+              Loading...
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Floating QR Code Scanner Button */}
+      <Animated.View
+        style={[
+          styles.floatingButtonContainer,
+          {
+            transform: [
+              { scale: floatingButtonAnim },
+              {
+                translateY: qrButtonAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 120], // move down when hidden
+                }),
+              },
+            ],
+            opacity: qrButtonAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0],
+            }),
+            bottom: insets.bottom + 8,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={[
+            styles.floatingButton,
+            {
+              backgroundColor: colors.floatingButton,
+              borderColor: colors.floatingButtonBorder,
+            },
+          ]}
+          onPress={handleQrPress}
+          activeOpacity={0.8}
+          disabled={isNavigating}
+        >
+          <View style={styles.floatingButtonInner}>
+            <Ionicons name="qr-code" size={20} color="#FFFFFF" />
+          </View>
+        </TouchableOpacity>
+        <Text style={[styles.floatingButtonLabel, { color: colors.textLight }]}>
+          Scan
+        </Text>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safearea: {
-    flex: 1,
-  },
   container: {
     flex: 1,
   },
-  // Loading Line Styles
   loadingLineContainer: {
     position: "absolute",
     top: 0,
@@ -497,7 +533,7 @@ const styles = StyleSheet.create({
   tabBar: {
     height: 60,
     paddingBottom: 9,
-    paddingTop: 0,
+    paddingTop: 8,
     borderTopWidth: 1,
     elevation: 8,
     shadowColor: "#000",
@@ -510,12 +546,24 @@ const styles = StyleSheet.create({
     right: 0,
   },
   tabLabel: {
-    fontSize: 12,
+    fontSize: 8,
     fontWeight: "700",
-    marginTop: 0,
+    marginTop: 2,
+    marginBottom: 10,
+    textAlign: "center",
+    width: "100%",
+    includeFontPadding: false,
+  },
+  tabLabelFocused: {
+    fontWeight: "800",
   },
   tabItem: {
-    paddingVertical: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 1,
+    flex: 1,
+    minWidth: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   loadingOverlay: {
     position: "absolute",
@@ -526,7 +574,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.2)",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 9998, // Below loading line
+    zIndex: 9998,
   },
   loadingContainer: {
     backgroundColor: "rgb(255, 255, 255)",
@@ -546,7 +594,6 @@ const styles = StyleSheet.create({
   },
   floatingButtonContainer: {
     position: "absolute",
-    bottom: 8,
     alignSelf: "center",
     alignItems: "center",
     zIndex: 999,
@@ -557,9 +604,6 @@ const styles = StyleSheet.create({
     borderRadius: 32.5,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 15,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.3,
     shadowRadius: 10,
     borderWidth: 4,
   },

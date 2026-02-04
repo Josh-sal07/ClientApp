@@ -1,19 +1,20 @@
 import React, { useEffect, useState, useRef } from "react";
 import {
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
-  Modal,
   ActivityIndicator,
-  FlatList,
   Alert,
   Animated,
+  RefreshControl,
+  Modal,
   Dimensions,
+  StatusBar,
+  Platform,
+  ImageBackground,
 } from "react-native";
-import Overlay from "../../../../components/overlay";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useUserStore } from "../../../../store/user";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,14 +22,16 @@ import { useRouter } from "expo-router";
 import { WebView } from "react-native-webview";
 import { useTheme } from "../../../../theme/ThemeContext";
 import { useColorScheme } from "react-native";
+import { sharedScrollY } from "../../../../shared/sharedScroll";
 
 const { width, height } = Dimensions.get("window");
 
-const SubscriptionScreen = () => {
+const MySubscriptionsScreen = () => {
   const router = useRouter();
   const user = useUserStore((state) => state.user);
   const { mode, theme } = useTheme();
   const systemColorScheme = useColorScheme();
+  const scrollY = sharedScrollY;
 
   // Determine effective theme mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
@@ -36,9 +39,9 @@ const SubscriptionScreen = () => {
   // Define colors based on theme
   const COLORS = {
     light: {
-      primary: "#21C7B9", // Teal from "KAZIBU FAST"
-      secondary: "#00AFA1", // Darker teal
-      dark: "#1b2e2c", // Dark teal/gray
+      primary: "#21C7B9",
+      secondary: "#00AFA1",
+      dark: "#1b2e2c",
       white: "#FFFFFF",
       lightGray: "#F8F9FA",
       gray: "#718096",
@@ -47,14 +50,13 @@ const SubscriptionScreen = () => {
       success: "#00AFA1",
       warning: "#FFA726",
       danger: "#FF6B6B",
-      facebook: "#1877F2",
       surface: "#FFFFFF",
       background: "#F5F8FA",
       text: "#1E293B",
       textLight: "#64748B",
     },
     dark: {
-      primary: "#1f6f68", // Darker teal for dark mode
+      primary: "#1f6f68",
       secondary: "#00AFA1",
       dark: "#121212",
       white: "#FFFFFF",
@@ -65,7 +67,6 @@ const SubscriptionScreen = () => {
       success: "#00AFA1",
       warning: "#FFA726",
       danger: "#FF6B6B",
-      facebook: "#1877F2",
       surface: "#1E1E1E",
       background: "#121212",
       text: "#FFFFFF",
@@ -79,27 +80,29 @@ const SubscriptionScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedSubscription, setSelectedSubscription] = useState(null);
-  const [subscriptionDetails, setSubscriptionDetails] = useState(null); // NEW: For detailed view
-  const [selectedBill, setSelectedBill] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [showBillingHistory, setShowBillingHistory] = useState(false);
-  const [showWebView, setShowWebView] = useState(false);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [loadingDetails, setLoadingDetails] = useState(false); // NEW: For loading details
+  const [creditsPaymentProcessing, setCreditsPaymentProcessing] = useState(false);
+  
+  // WebView payment states
+  const [showWebView, setShowWebView] = useState(false);
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [selectedSubscriptionForPayment, setSelectedSubscriptionForPayment] = useState(null);
+  const [paymentUrl, setPaymentUrl] = useState("");
 
-  const [creditsPaymentProcessing, setCreditsPaymentProcessing] =
-    useState(false); // NEW
+  // Loading states for navigation
+  const [loadingNavigation, setLoadingNavigation] = useState({
+    viewDetails: false,
+    billingHistory: false,
+    subscriptionId: null
+  });
 
   const scrollViewRef = useRef(null);
-  const scrollY = useRef(new Animated.Value(0)).current;
 
   const getToken = async () => {
     try {
       const token = await AsyncStorage.getItem("token");
       return token;
     } catch (err) {
-      console.error("Error getting token:", err);
       return null;
     }
   };
@@ -123,87 +126,26 @@ const SubscriptionScreen = () => {
       );
 
       const data = await response.json();
-      console.log("API Response RAW:", JSON.stringify(data, null, 2));
 
-      // Debug: Log the structure
-      console.log("Data type:", typeof data);
-      console.log("Data keys:", Object.keys(data || {}));
-
-      // SIMPLIFIED FIX: Handle the nested structure from your JSON
       if (data && data.subscription) {
-        // If we have a subscription object (from your JSON example)
         const subscriptionData = data.subscription;
-
-        // Check if it's an array or single object
         if (Array.isArray(subscriptionData)) {
-          // Multiple subscriptions
           setSubscriptions(subscriptionData);
-          console.log(
-            `Set ${subscriptionData.length} subscriptions from data.subscription array`,
-          );
-
-          // Debug each subscription
-          subscriptionData.forEach((sub, index) => {
-            console.log(`Subscription ${index} plan:`, sub?.plan?.name);
-          });
         } else if (subscriptionData.id) {
-          // Single subscription object
           setSubscriptions([subscriptionData]);
-          console.log("Set 1 subscription from data.subscription object");
-          console.log("Plan name:", subscriptionData?.plan?.name);
         } else {
           setSubscriptions([]);
-          console.log("No valid subscription in data.subscription");
         }
       } else if (Array.isArray(data)) {
-        // Direct array of subscriptions
         setSubscriptions(data);
-        console.log(`Set ${data.length} subscriptions (direct array)`);
-
-        // Debug each subscription
-        data.forEach((sub, index) => {
-          console.log(`Subscription ${index} plan:`, sub?.plan?.name);
-        });
       } else {
         setSubscriptions([]);
-        console.log("No subscription data found");
       }
     } catch (err) {
-      console.error(err);
       setError(err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
-    }
-  };
-
-  // NEW: Fetch subscription details from the view endpoint
-  const fetchSubscriptionDetails = async (subscriptionId) => {
-    setLoadingDetails(true);
-    try {
-      const token = await getToken();
-      if (!token) throw new Error("No token found");
-
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/subscriptions/view/${subscriptionId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        },
-      );
-
-      const data = await response.json();
-      console.log("Subscription Details Response:", data);
-
-      // Extract the subscription from the response
-      setSubscriptionDetails(data.subscription || data);
-    } catch (err) {
-      console.error("Error fetching subscription details:", err);
-      Alert.alert("Error", "Failed to load subscription details");
-    } finally {
-      setLoadingDetails(false);
     }
   };
 
@@ -217,17 +159,14 @@ const SubscriptionScreen = () => {
     setRefreshing(false);
   }, [user]);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    try {
-      const date = new Date(dateString);
-      const day = date.getDate().toString().padStart(2, "0");
-      const month = (date.getMonth() + 1).toString().padStart(2, "0");
-      const year = date.getFullYear();
-      return `${day}/${month}/${year}`;
-    } catch {
-      return dateString;
-    }
+  const formatDate = (date) => {
+    if (!date) return "N/A";
+
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+    }).format(new Date(date));
   };
 
   const formatCurrency = (amount) => {
@@ -238,88 +177,79 @@ const SubscriptionScreen = () => {
     })}`;
   };
 
-  const handleCardPress = async (subscription) => {
-    setSelectedSubscription(subscription);
-    setShowBillingHistory(false);
-    setModalVisible(true);
+  const handleViewDetails = async (subscription) => {
+    try {
+      // Set loading state for this specific subscription
+      setLoadingNavigation({
+        viewDetails: true,
+        billingHistory: false,
+        subscriptionId: subscription.id
+      });
 
-    // Fetch detailed subscription data
-    if (subscription.id) {
-      await fetchSubscriptionDetails(subscription.id);
+      // Simulate a small delay for better UX
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      router.push({
+        pathname: `/${subscription.id}`,
+        params: { 
+          subscription: JSON.stringify(subscription),
+          colors: JSON.stringify(colors)
+        }
+      });
+    } catch (error) {
+      Alert.alert("Error", "Failed to navigate to subscription details.");
+    } finally {
+      // Reset loading state after navigation
+      setLoadingNavigation({
+        viewDetails: false,
+        billingHistory: false,
+        subscriptionId: null
+      });
     }
   };
 
-  const handleViewBillingHistory = (subscription) => {
-    setSelectedSubscription(subscription);
-    setShowBillingHistory(true);
-    setModalVisible(true);
+  const handleViewBillingHistory = async (subscription) => {
+    try {
+      // Set loading state for this specific subscription
+      setLoadingNavigation({
+        viewDetails: false,
+        billingHistory: true,
+        subscriptionId: subscription.id
+      });
+
+      // Simulate a small delay for better UX
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      router.push({
+        pathname: `/${subscription.id}/billHistory`,
+        params: { 
+          subscription: JSON.stringify(subscription),
+          colors: JSON.stringify(colors)
+        }
+      });
+    } catch (error) {
+      Alert.alert("Error", "Failed to navigate to billing history.");
+    } finally {
+      // Reset loading state after navigation
+      setLoadingNavigation({
+        viewDetails: false,
+        billingHistory: false,
+        subscriptionId: null
+      });
+    }
   };
 
-  // Credits points pay button
-
-  const handlePayWithCreditsPoints = (billingItem) => {
+  const handlePayNow = async (billingItem, subscription) => {
+    setPaymentProcessing(true);
     setSelectedBill(billingItem);
-
-    Alert.alert(
-      "Pay with Credits Points",
-      `Pay ${formatCurrency(billingItem.amount_due)} using your credits points?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Proceed",
-          onPress: () => navigateToCreditsPayment(billingItem),
-          style: "default",
-        },
-      ],
-    );
-  };
-
-  const navigateToCreditsPayment = (billingItem) => {
-    // Navigate to the credits points payment page
-    router.push({
-      pathname: "/(role)/(payment)/credits-points",
-      params: {
-        billingId: billingItem.id,
-        amountDue: billingItem.amount_due.toString(),
-        dueDate: billingItem.due_date,
-        subscriptionId: selectedSubscription?.subscription_id || "N/A",
-        billDetails: JSON.stringify(billingItem),
-      },
-    });
-  };
-
-  const handlePayNow = (billingItem) => {
-    setSelectedBill(billingItem);
-
-    Alert.alert(
-      "Confirm Payment",
-      `Pay ${formatCurrency(billingItem.amount_due)} for bill due on ${formatDate(
-        billingItem.due_date,
-      )}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Proceed to Payment",
-          onPress: () => initiatePayment(billingItem),
-          style: "default",
-        },
-      ],
-    );
-  };
-
-  // Initiate payment process
-  const initiatePayment = async (bill) => {
-    console.log("Initiating payment for bill:", bill);
-    setPaymentProcessing(true); // Only set this for E-wallet/Bank payment
+    setSelectedSubscriptionForPayment(subscription);
 
     try {
       const token = await getToken();
       if (!token) throw new Error("No auth token");
 
-      console.log(`Calling payment API for bill ID: ${bill.id}`);
-
       const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/billings/invoice/${bill.id}`,
+        `https://staging.kazibufastnet.com/api/app/billings/invoice/${billingItem.id}`,
         {
           method: "GET",
           headers: {
@@ -331,11 +261,8 @@ const SubscriptionScreen = () => {
       );
 
       const responseText = await response.text();
-      console.log("Payment API response status:", response.status);
-      console.log("Payment API raw response:", responseText);
 
       if (!response.ok) {
-        console.error("Payment API error:", response.status, responseText);
         throw new Error(
           `Payment failed: ${response.status} - ${responseText.substring(0, 100)}`,
         );
@@ -344,41 +271,47 @@ const SubscriptionScreen = () => {
       let paymentData;
       try {
         paymentData = JSON.parse(responseText);
-        console.log("Parsed payment data:", paymentData);
       } catch (parseError) {
-        console.error("Failed to parse JSON:", parseError);
         throw new Error("Invalid response from payment server");
       }
 
       if (paymentData.url) {
-        console.log("Payment URL received:", paymentData.url);
-        setSelectedBill({
-          ...bill,
-          payment_url: paymentData.url,
-        });
+        setPaymentUrl(paymentData.url);
         setShowWebView(true);
       } else {
-        console.warn("No URL in payment response:", paymentData);
         Alert.alert(
           "Payment Error",
           "Payment gateway URL not received. Please try again or contact support.",
         );
       }
     } catch (error) {
-      console.error("Payment initiation error:", error.message);
       Alert.alert(
         "Payment Error",
         error.message || "Failed to initiate payment. Please try again.",
       );
     } finally {
-      setPaymentProcessing(false); // Reset only this loading state
+      setPaymentProcessing(false);
     }
   };
 
-  // Handle webview close
+  const handlePayWithCreditsPoints = (billingItem, subscription) => {
+    router.push({
+      pathname: "/(role)/(payment)/credits-points",
+      params: {
+        billingId: billingItem.id,
+        amountDue: billingItem.amount_due.toString(),
+        dueDate: billingItem.due_date,
+        subscriptionId: subscription.subscription_id || "N/A",
+        billDetails: JSON.stringify(billingItem),
+      },
+    });
+  };
+
   const handleWebViewClose = (success = false) => {
     setShowWebView(false);
     setSelectedBill(null);
+    setSelectedSubscriptionForPayment(null);
+    setPaymentUrl("");
 
     if (success) {
       fetchSubscriptionData();
@@ -392,8 +325,7 @@ const SubscriptionScreen = () => {
     }
   };
 
-  // WebView Modal Component
-  const PaymentWebView = () => {
+  const PaymentWebViewModal = () => {
     return (
       <Modal
         animationType="slide"
@@ -420,9 +352,9 @@ const SubscriptionScreen = () => {
             <View style={styles.webviewRightPlaceholder} />
           </View>
 
-          {selectedBill?.payment_url ? (
+          {paymentUrl ? (
             <WebView
-              source={{ uri: selectedBill.payment_url }}
+              source={{ uri: paymentUrl }}
               style={{ flex: 1 }}
               startInLoadingState
               renderLoading={() => (
@@ -439,7 +371,6 @@ const SubscriptionScreen = () => {
                 </View>
               )}
               onNavigationStateChange={(navState) => {
-                console.log("WebView navigation state:", navState.url);
                 if (
                   navState.url.includes("success") ||
                   navState.url.includes("completed") ||
@@ -456,7 +387,6 @@ const SubscriptionScreen = () => {
                 }
               }}
               onError={(error) => {
-                console.error("WebView error:", error);
                 Alert.alert(
                   "WebView Error",
                   "Failed to load payment page. Please try again.",
@@ -464,7 +394,6 @@ const SubscriptionScreen = () => {
                 handleWebViewClose(false);
               }}
               onHttpError={(error) => {
-                console.error("WebView HTTP error:", error);
               }}
             />
           ) : (
@@ -490,10 +419,8 @@ const SubscriptionScreen = () => {
     );
   };
 
-  // Get billing history from subscription data
   const getBillingHistory = (subscription) => {
     if (!subscription || !Array.isArray(subscription.billing)) return [];
-
     return [...subscription.billing].sort(
       (a, b) => new Date(b.due_date || 0) - new Date(a.due_date || 0),
     );
@@ -502,38 +429,70 @@ const SubscriptionScreen = () => {
   const renderSubscriptionCard = (subscription) => {
     const billingHistory = getBillingHistory(subscription);
     const currentBilling = billingHistory.length > 0 ? billingHistory[0] : null;
+    
+    const isSubscriptionActive = subscription.status === "active";
+    const isSubscriptionEnded = subscription.status === "ended" || subscription.status === "cancelled" || subscription.status === "terminated";
+    const isCurrentBillUnpaid = currentBilling && currentBilling.status === "unpaid";
+    const shouldShowPaymentButtons = isSubscriptionActive && isCurrentBillUnpaid;
+
+    // Check if this subscription is loading for View Details
+    const isViewDetailsLoading = loadingNavigation.viewDetails && 
+                               loadingNavigation.subscriptionId === subscription.id;
+    
+    // Check if this subscription is loading for Billing History
+    const isBillingHistoryLoading = loadingNavigation.billingHistory && 
+                                  loadingNavigation.subscriptionId === subscription.id;
+
     return (
       <View key={subscription.id} style={styles.subscriptionCardContainer}>
-        <TouchableOpacity
+        <View
           style={[
             styles.subscriptionCard,
             {
               backgroundColor: colors.surface,
               borderColor: colors.primary + "90",
+              shadowColor: effectiveMode === "dark" ? "transparent" : "#000",
             },
           ]}
-          onPress={() => handleCardPress(subscription)}
-          activeOpacity={0.7}
         >
+          {/* Card Header with Status Badge */}
           <View style={styles.cardHeader}>
-            <Text style={[styles.accountNumber, { color: colors.text }]}>
-              {subscription.subscription_id || "N/A"}
-            </Text>
+            <View style={styles.accountInfo}>
+              <View style={styles.accountIconContainer}>
+                <Ionicons name="wifi-outline" size={20} color={colors.white} />
+              </View>
+              <View>
+                <Text style={[styles.accountLabel, { color: colors.textLight }]}>
+                  Account Number
+                </Text>
+                <Text style={[styles.accountNumber, { color: colors.text }]}>
+                  {subscription.subscription_id || "N/A"}
+                </Text>
+              </View>
+            </View>
             <View
               style={[
                 styles.statusBadge,
-                subscription.status === "active"
+                isSubscriptionActive
                   ? styles.statusBadgeActive
                   : styles.statusBadgeEnded,
-                subscription.status === "active"
+                isSubscriptionActive
                   ? { backgroundColor: colors.primary + "15" }
                   : { backgroundColor: colors.danger + "15" },
               ]}
             >
+              <View
+                style={[
+                  styles.statusDot,
+                  isSubscriptionActive
+                    ? { backgroundColor: colors.primary }
+                    : { backgroundColor: colors.danger },
+                ]}
+              />
               <Text
                 style={[
                   styles.statusText,
-                  subscription.status === "active"
+                  isSubscriptionActive
                     ? [styles.statusActive, { color: colors.primary }]
                     : [styles.statusEnded, { color: colors.danger }],
                 ]}
@@ -543,69 +502,69 @@ const SubscriptionScreen = () => {
             </View>
           </View>
 
+          {/* Card Body */}
           <View style={styles.cardBody}>
-            <View style={styles.cardRow}>
-              <Ionicons name="wifi-outline" size={16} color={colors.primary} />
-              <Text style={[styles.cardLabel, { color: colors.textLight }]}>
-                Plan:
-              </Text>
-              <Text
-                style={[styles.cardValue, { color: colors.text }]}
-                numberOfLines={1}
-              >
-                {subscription?.plan?.name ||
-                  subscription?.plan?.name ||
-                  subscription?.plan_name ||
-                  "N/A"}
-              </Text>
+            {/* Plan Info */}
+            <View style={styles.infoRow}>
+              <View style={[styles.infoIcon, { backgroundColor: colors.primary + "10" }]}>
+                <Ionicons name="speedometer-outline" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={[styles.infoLabel, { color: colors.textLight }]}>
+                  Plan
+                </Text>
+                <Text style={[styles.infoValue, { color: colors.text }]}>
+                  {subscription?.plan?.name || "N/A"}
+                </Text>
+              </View>
             </View>
 
-            <View style={styles.cardRow}>
-              <Ionicons
-                name="calendar-outline"
-                size={16}
-                color={colors.primary}
-              />
-              <Text style={[styles.cardLabel, { color: colors.textLight }]}>
-                Transaction Date:
-              </Text>
-              <Text style={[styles.cardValue, { color: colors.text }]}>
-                {formatDate(subscription.transaction_date)}
-              </Text>
+            {/* Dates */}
+            <View style={styles.datesContainer}>
+              <View style={styles.dateColumn}>
+                <View style={[styles.infoIcon, { backgroundColor: colors.primary + "10" }]}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                </View>
+                <View style={styles.infoContent}>
+                  <Text style={[styles.infoLabel, { color: colors.textLight }]}>
+                    Started
+                  </Text>
+                  <Text style={[styles.infoValue, { color: colors.text }]}>
+                    {formatDate(subscription.start_date)}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.dateColumn}>
+                <View style={[styles.infoIcon, { backgroundColor: colors.primary + "10" }]}>
+                  <Ionicons name="calendar-clear-outline" size={16} color={colors.primary} />
+                </View>
+                <View style={styles.infoContent}>
+                  <Text style={[styles.infoLabel, { color: colors.textLight }]}>
+                    Transaction
+                  </Text>
+                  <Text style={[styles.infoValue, { color: colors.text }]}>
+                    {formatDate(subscription.transaction_date)}
+                  </Text>
+                </View>
+              </View>
             </View>
 
-            <View style={styles.cardRow}>
-              <Ionicons
-                name="play-circle-outline"
-                size={16}
-                color={colors.primary}
-              />
-              <Text style={[styles.cardLabel, { color: colors.textLight }]}>
-                Date Started:
-              </Text>
-              <Text style={[styles.cardValue, { color: colors.text }]}>
-                {formatDate(subscription.start_date)}
-              </Text>
+            {/* Address */}
+            <View style={styles.infoRow}>
+              <View style={[styles.infoIcon, { backgroundColor: colors.primary + "10" }]}>
+                <Ionicons name="location-outline" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={[styles.infoLabel, { color: colors.textLight }]}>
+                  Installation Address
+                </Text>
+                <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={2}>
+                  {subscription.installation_address || "N/A"}
+                </Text>
+              </View>
             </View>
 
-            <View style={styles.cardRow}>
-              <Ionicons
-                name="location-outline"
-                size={16}
-                color={colors.primary}
-              />
-              <Text style={[styles.cardLabel, { color: colors.textLight }]}>
-                Address:
-              </Text>
-              <Text
-                style={[styles.addressValue, { color: colors.text }]}
-                numberOfLines={2}
-              >
-                {subscription.installation_address || "N/A"}
-              </Text>
-            </View>
-
-            {/* Current Billing Info */}
+            {/* Current Billing Section */}
             {currentBilling && (
               <View
                 style={[
@@ -616,954 +575,234 @@ const SubscriptionScreen = () => {
                   },
                 ]}
               >
-                <View style={styles.billingInfoRow}>
-                  <Text
-                    style={[styles.billingLabel, { color: colors.textLight }]}
-                  >
-                    Current Due:
+                <View style={styles.billingHeader}>
+                  <Text style={[styles.billingTitle, { color: colors.text }]}>
+                    Current Billing
                   </Text>
-                  <Text style={[styles.billingAmount, { color: colors.text }]}>
-                    {formatCurrency(currentBilling.amount_due)}
-                  </Text>
-                </View>
-                <View style={styles.billingInfoRow}>
-                  <Text
-                    style={[styles.billingLabel, { color: colors.textLight }]}
-                  >
-                    Due Date:
-                  </Text>
-                  <Text
-                    style={[styles.billingDate, { color: colors.textLight }]}
-                  >
-                    {formatDate(currentBilling.due_date)}
-                  </Text>
-                </View>
-                <View style={styles.billingInfoRow}>
-                  <Text
-                    style={[styles.billingLabel, { color: colors.textLight }]}
-                  >
-                    Status:
-                  </Text>
-                  <Text
-                    style={[
-                      styles.billingStatus,
-                      currentBilling.status === "paid"
-                        ? [
-                            styles.billingStatusPaid,
-                            {
-                              backgroundColor: colors.primary + "20",
-                              color: colors.primary,
-                            },
-                          ]
-                        : [
-                            styles.billingStatusUnpaid,
-                            {
-                              backgroundColor: colors.danger + "20",
-                              color: colors.danger,
-                            },
-                          ],
-                    ]}
-                  >
-                    {currentBilling.status?.toUpperCase() || "N/A"}
-                  </Text>
-                </View>
-
-                {/* Pay via e-wallet/bank Button for Current Unpaid Bill */}
-                {currentBilling.status === "unpaid" && (
-                  <TouchableOpacity
-                    style={[
-                      styles.payNowButton,
-                      { backgroundColor: colors.primary },
-                      paymentProcessing && styles.payNowButtonDisabled,
-                    ]}
-                    onPress={() => handlePayNow(currentBilling)}
-                    disabled={paymentProcessing || creditsPaymentProcessing}
-                  >
-                    {paymentProcessing ? (
-                      <ActivityIndicator size="small" color={colors.white} />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="card-outline"
-                          size={16}
-                          color={colors.white}
-                          style={styles.payNowIcon}
-                        />
-                        <Text style={styles.payNowText}>
-                          Pay via E-Wallet / Bank
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
-
-                {/* Pay Via Credits points Button for Current Unpaid Bill */}
-                {currentBilling.status === "unpaid" && (
-                  <TouchableOpacity
-                    style={[
-                      styles.payNowButton,
-                      { backgroundColor: colors.secondary }, // Different color!
-                      (paymentProcessing || creditsPaymentProcessing) &&
-                        styles.payNowButtonDisabled,
-                    ]}
-                    onPress={() => handlePayWithCreditsPoints(currentBilling)}
-                    disabled={paymentProcessing || creditsPaymentProcessing}
-                  >
-                    {creditsPaymentProcessing ? (
-                      <ActivityIndicator size="small" color={colors.white} />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="wallet-outline" // Different icon!
-                          size={16}
-                          color={colors.white}
-                          style={styles.payNowIcon}
-                        />
-                        <Text style={styles.payNowText}>
-                          Pay With Credits Points
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
-
-          <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
-            <Text style={[styles.viewDetailsText, { color: colors.primary }]}>
-              Tap to view details
-              <Ionicons
-                name="chevron-forward"
-                size={14}
-                color={colors.primary}
-                style={styles.chevronIcon}
-              />
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderBillingHistoryItem = ({ item }) => {
-    const isUnpaid = item.status && item.status.toLowerCase() !== "paid";
-
-    return (
-      <View
-        style={[
-          styles.billingHistoryCard,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.primary + "10",
-          },
-        ]}
-      >
-        <View style={styles.billingHeader}>
-          <View>
-            <Text style={[styles.billingPeriod, { color: colors.textLight }]}>
-              Billing Period
-            </Text>
-            <Text style={[styles.billingDateRange, { color: colors.text }]}>
-              {item.period
-                ? item.period
-                : `${formatDate(item.start_date) || "N/A"} - ${
-                    formatDate(item.end_date) || "N/A"
-                  }`}
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.billingStatusBadge,
-              item.status && item.status.toLowerCase() === "paid"
-                ? [
-                    styles.billingStatusPaid,
-                    { backgroundColor: colors.primary + "15" },
-                  ]
-                : [
-                    styles.billingStatusUnpaid,
-                    { backgroundColor: colors.danger + "15" },
-                  ],
-            ]}
-          >
-            <Text
-              style={[
-                styles.billingStatusText,
-                item.status && item.status.toLowerCase() === "paid"
-                  ? [styles.billingStatusTextPaid, { color: colors.primary }]
-                  : [styles.billingStatusTextUnpaid, { color: colors.danger }],
-              ]}
-            >
-              {item.status ? item.status.toUpperCase() : "N/A"}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.billingDetails}>
-          <View style={styles.billingRow}>
-            <Text
-              style={[styles.billingDetailLabel, { color: colors.textLight }]}
-            >
-              Amount Due:
-            </Text>
-            <Text style={[styles.billingDetailValue, { color: colors.text }]}>
-              {formatCurrency(item.amount_due)}
-            </Text>
-          </View>
-          <View style={styles.billingRow}>
-            <Text
-              style={[styles.billingDetailLabel, { color: colors.textLight }]}
-            >
-              Amount Paid:
-            </Text>
-            <Text style={[styles.billingDetailValue, { color: colors.text }]}>
-              {formatCurrency(item.amount_paid)}
-            </Text>
-          </View>
-          <View style={styles.billingRow}>
-            <Text
-              style={[styles.billingDetailLabel, { color: colors.textLight }]}
-            >
-              Due Date:
-            </Text>
-            <Text style={[styles.billingDetailValue, { color: colors.text }]}>
-              {formatDate(item.due_date)}
-            </Text>
-          </View>
-          <View style={styles.billingRow}>
-            <Text
-              style={[styles.billingDetailLabel, { color: colors.textLight }]}
-            >
-              Payment Mode:
-            </Text>
-            <Text style={[styles.billingDetailValue, { color: colors.text }]}>
-              {item.payment_mode || "N/A"}
-            </Text>
-          </View>
-          {item.penalty > 0 && (
-            <View style={styles.billingRow}>
-              <Text
-                style={[
-                  styles.billingDetailLabel,
-                  styles.penaltyLabel,
-                  { color: colors.danger },
-                ]}
-              >
-                Penalty:
-              </Text>
-              <Text
-                style={[
-                  styles.billingDetailValue,
-                  styles.penaltyValue,
-                  { color: colors.danger },
-                ]}
-              >
-                {formatCurrency(item.penalty)}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Pay Now Button for Unpaid Bills */}
-        {isUnpaid && (
-          <View style={styles.paymentButtonsContainer}>
-            {/* E-Wallet/Bank Button */}
-            <TouchableOpacity
-              style={[
-                styles.payNowButton,
-                styles.payNowButtonHistory,
-                { backgroundColor: colors.primary, flex: 1, marginRight: 5 },
-                paymentProcessing && styles.payNowButtonDisabled,
-              ]}
-              onPress={() => handlePayNow(item)}
-              disabled={paymentProcessing || creditsPaymentProcessing}
-            >
-              {paymentProcessing ? (
-                <ActivityIndicator size="small" color={colors.white} />
-              ) : (
-                <>
-                  <Ionicons
-                    name="card-outline"
-                    size={16}
-                    color={colors.white}
-                  />
-                  <Text style={styles.payNowText}>Pay Now</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            {/* Credits Points Button */}
-            <TouchableOpacity
-              style={[
-                styles.payNowButton,
-                styles.payNowButtonHistory,
-                { backgroundColor: colors.secondary, flex: 1, marginLeft: 5 },
-                creditsPaymentProcessing && styles.payNowButtonDisabled,
-              ]}
-              onPress={() => handlePayWithCreditsPoints(item)}
-              disabled={paymentProcessing || creditsPaymentProcessing}
-            >
-              {creditsPaymentProcessing ? (
-                <ActivityIndicator size="small" color={colors.white} />
-              ) : (
-                <>
-                  <Ionicons
-                    name="wallet-outline"
-                    size={16}
-                    color={colors.white}
-                  />
-                  <Text style={styles.payNowText}>Credits</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    );
-  };
-
-  const renderBillingHistoryModal = () => {
-    const billingHistory = selectedSubscription
-      ? getBillingHistory(selectedSubscription)
-      : [];
-
-    return (
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible && showBillingHistory}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContainer,
-              { backgroundColor: colors.background },
-            ]}
-          >
-            <View
-              style={[styles.modalHeader, { backgroundColor: colors.primary }]}
-            >
-              <TouchableOpacity
-                onPress={() => {
-                  setShowBillingHistory(false);
-                  setModalVisible(false);
-                  setSubscriptionDetails(null); // Reset details
-                }}
-                style={styles.modalBackButton}
-              >
-                <Ionicons name="arrow-back" size={24} color={colors.white} />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Billing History</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModalVisible(false);
-                  setSubscriptionDetails(null); // Reset details
-                }}
-                style={styles.modalCloseButton}
-              >
-                <Ionicons name="close" size={24} color={colors.white} />
-              </TouchableOpacity>
-            </View>
-
-            <View
-              style={[
-                styles.modalSubheader,
-                {
-                  backgroundColor: colors.surface,
-                  borderBottomColor: colors.border,
-                },
-              ]}
-            >
-              <Text style={[styles.modalSubtitle, { color: colors.text }]}>
-                Account: {selectedSubscription?.subscription_id || "N/A"}
-              </Text>
-              <Text style={[styles.billingCount, { color: colors.textLight }]}>
-                {billingHistory.length} billing record
-                {billingHistory.length !== 1 ? "s" : ""}
-              </Text>
-            </View>
-
-            <ScrollView
-              style={styles.modalContent}
-              contentContainerStyle={styles.modalContentContainer}
-            >
-              {billingHistory.length > 0 ? (
-                <FlatList
-                  data={billingHistory}
-                  renderItem={renderBillingHistoryItem}
-                  keyExtractor={(item) =>
-                    item.id?.toString() || Math.random().toString()
-                  }
-                  scrollEnabled={false}
-                  contentContainerStyle={styles.billingList}
-                  ItemSeparatorComponent={() => (
+                  <View style={styles.billingStatusContainer}>
                     <View
                       style={[
-                        styles.billingSeparator,
-                        { backgroundColor: colors.background },
+                        styles.billingStatusDot,
+                        currentBilling.status === "paid"
+                          ? { backgroundColor: colors.success }
+                          : { backgroundColor: colors.danger },
                       ]}
                     />
-                  )}
-                />
-              ) : (
-                <View style={styles.noBillingContainer}>
-                  <Ionicons
-                    name="receipt-outline"
-                    size={60}
-                    color={colors.gray}
-                  />
-                  <Text
-                    style={[styles.noBillingText, { color: colors.textLight }]}
-                  >
-                    No billing history found
-                  </Text>
-                  <Text
-                    style={[styles.noBillingSubtext, { color: colors.gray }]}
-                  >
-                    This subscription has no billing records yet
-                  </Text>
+                    <Text
+                      style={[
+                        styles.billingStatus,
+                        currentBilling.status === "paid"
+                          ? { color: colors.success }
+                          : { color: colors.danger },
+                      ]}
+                    >
+                      {currentBilling.status?.toUpperCase()}
+                    </Text>
+                  </View>
                 </View>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
 
-  const renderDetailsModal = () => {
-    const installationAddress =
-      selectedSubscription?.installation_address || "N/A";
+                <View style={styles.billingDetails}>
+                  <View style={styles.billingAmountContainer}>
+                    <Text style={[styles.billingLabel, { color: colors.textLight }]}>
+                      Amount Due
+                    </Text>
+                    <Text style={[styles.billingAmount, { color: colors.text }]}>
+                      {formatCurrency(currentBilling.amount_due)}
+                    </Text>
+                  </View>
+                  <View style={styles.billingDateContainer}>
+                    <Text style={[styles.billingLabel, { color: colors.textLight }]}>
+                      Due Date
+                    </Text>
+                    <Text style={[styles.billingDate, { color: colors.textLight }]}>
+                      {formatDate(currentBilling.due_date)}
+                    </Text>
+                  </View>
+                </View>
 
-    return (
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible && !showBillingHistory}
-        onRequestClose={() => {
-          setModalVisible(false);
-          setSubscriptionDetails(null); // Reset details
-        }}
-      >
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContainer,
-              { backgroundColor: colors.background },
-            ]}
-          >
-            <View
-              style={[styles.modalHeader, { backgroundColor: colors.primary }]}
-            >
-              <Text style={styles.modalTitle}>Subscription Details</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModalVisible(false);
-                  setSubscriptionDetails(null); // Reset details
-                }}
-                style={styles.modalCloseButton}
-              >
-                <Ionicons name="close" size={24} color={colors.white} />
-              </TouchableOpacity>
-            </View>
+                {/* Payment Buttons */}
+                {shouldShowPaymentButtons && (
+                  <View style={styles.paymentButtonsContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.paymentButton,
+                        { backgroundColor: colors.primary },
+                        paymentProcessing && styles.buttonDisabled,
+                      ]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        Alert.alert(
+                          "Confirm Payment",
+                          `Pay ${formatCurrency(currentBilling.amount_due)} for bill due on ${formatDate(
+                            currentBilling.due_date,
+                          )}?`,
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Proceed to Payment",
+                              onPress: () => handlePayNow(currentBilling, subscription),
+                              style: "default",
+                            },
+                          ],
+                        );
+                      }}
+                      disabled={paymentProcessing || creditsPaymentProcessing}
+                    >
+                      {paymentProcessing ? (
+                        <ActivityIndicator size="small" color={colors.white} />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="card-outline"
+                            size={18}
+                            color={colors.white}
+                            style={styles.buttonIcon}
+                          />
+                          <Text style={styles.buttonText}>
+                            Pay via E-Wallet / Bank
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
 
-            {/* Loading indicator for details */}
-            {loadingDetails && (
-              <View
-                style={[
-                  styles.detailsLoadingContainer,
-                  {
-                    backgroundColor: colors.surface,
-                    borderBottomColor: colors.border,
-                  },
-                ]}
-              >
-                <ActivityIndicator size="small" color={colors.primary} />
-                <Text
-                  style={[
-                    styles.detailsLoadingText,
-                    { color: colors.textLight },
-                  ]}
-                >
-                  Loading details...
-                </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.paymentButton,
+                        { backgroundColor: colors.secondary },
+                        creditsPaymentProcessing && styles.buttonDisabled,
+                      ]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        Alert.alert(
+                          "Pay with Credits Points",
+                          `Pay ${formatCurrency(currentBilling.amount_due)} using your credits points?`,
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Proceed",
+                              onPress: () => handlePayWithCreditsPoints(currentBilling, subscription),
+                              style: "default",
+                            },
+                          ],
+                        );
+                      }}
+                      disabled={paymentProcessing || creditsPaymentProcessing}
+                    >
+                      {creditsPaymentProcessing ? (
+                        <ActivityIndicator size="small" color={colors.white} />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name="wallet-outline"
+                            size={18}
+                            color={colors.white}
+                            style={styles.buttonIcon}
+                          />
+                          <Text style={styles.buttonText}>
+                            Pay With Credits Points
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Status Messages */}
+                {!shouldShowPaymentButtons && (
+                  <View style={styles.statusMessageContainer}>
+                    {isSubscriptionEnded && (
+                      <View style={styles.statusMessage}>
+                        <Ionicons 
+                          name="checkmark-circle-outline" 
+                          size={18} 
+                          color={colors.success} 
+                        />
+                        <Text style={[styles.statusMessageText, { color: colors.success }]}>
+                          Subscription ended. No further payments required.
+                        </Text>
+                      </View>
+                    )}
+
+                    {isSubscriptionActive && currentBilling.status === "paid" && (
+                      <View style={styles.statusMessage}>
+                        <Ionicons 
+                          name="checkmark-circle-outline" 
+                          size={18} 
+                          color={colors.success} 
+                        />
+                        <Text style={[styles.statusMessageText, { color: colors.success }]}>
+                          Payment completed for this billing period
+                        </Text>
+                      </View>
+                    )}
+
+                    {isSubscriptionEnded && isCurrentBillUnpaid && (
+                      <View style={styles.statusMessage}>
+                        <Ionicons 
+                          name="warning-outline" 
+                          size={18} 
+                          color={colors.warning} 
+                        />
+                        <Text style={[styles.statusMessageText, { color: colors.warning }]}>
+                          Unpaid balance on ended subscription. Contact support.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
             )}
+          </View>
 
-            <ScrollView
-              style={styles.modalContent}
-              contentContainerStyle={styles.modalContentContainer}
+          {/* Card Footer */}
+          <View style={[styles.cardFooter, { borderTopColor: colors.border + "80" }]}>
+            {/* View Details Button */}
+            <TouchableOpacity 
+              style={styles.footerButton}
+              onPress={() => handleViewDetails(subscription)}
+              disabled={isViewDetailsLoading || isBillingHistoryLoading}
             >
-              {selectedSubscription && (
-                <>
-                  {/* Account Details */}
-                  <View
-                    style={[
-                      styles.detailSection,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.primary + "10",
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.sectionTitle,
-                        {
-                          color: colors.text,
-                          borderBottomColor: colors.border,
-                        },
-                      ]}
-                    >
-                      Account Information
-                    </Text>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Account Number:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {selectedSubscription.subscription_id || "N/A"}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Account Name:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {user?.name}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Status:
-                      </Text>
-                      <View
-                        style={[
-                          styles.detailStatusBadge,
-                          selectedSubscription.status === "active"
-                            ? [
-                                styles.detailStatusBadgeActive,
-                                { backgroundColor: colors.primary + "15" },
-                              ]
-                            : [
-                                styles.detailStatusBadgeEnded,
-                                { backgroundColor: colors.danger + "15" },
-                              ],
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.detailStatusText,
-                            selectedSubscription.status === "active"
-                              ? [
-                                  styles.detailStatusActive,
-                                  { color: colors.primary },
-                                ]
-                              : [
-                                  styles.detailStatusEnded,
-                                  { color: colors.danger },
-                                ],
-                          ]}
-                        >
-                          {selectedSubscription.status?.toUpperCase() || "N/A"}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Subscription Details */}
-                  <View
-                    style={[
-                      styles.detailSection,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.primary + "10",
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.sectionTitle,
-                        {
-                          color: colors.text,
-                          borderBottomColor: colors.border,
-                        },
-                      ]}
-                    >
-                      Subscription Details
-                    </Text>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Plan:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {subscriptionDetails?.plan?.name ||
-                          selectedSubscription?.plan?.name ||
-                          selectedSubscription?.plan_name ||
-                          "N/A"}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Transaction Date:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {formatDate(selectedSubscription.transaction_date)}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Date Started:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {formatDate(selectedSubscription.start_date)}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Installed Date:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {formatDate(selectedSubscription?.installed_date)}
-                      </Text>
-                    </View>
-
-                    {selectedSubscription.end_date && (
-                      <View
-                        style={[
-                          styles.detailRow,
-                          { borderBottomColor: colors.primary + "05" },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.detailLabel,
-                            { color: colors.textLight },
-                          ]}
-                        >
-                          End Date:
-                        </Text>
-                        <Text
-                          style={[styles.detailValue, { color: colors.text }]}
-                        >
-                          {formatDate(selectedSubscription.end_date)}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Installation Details */}
-                  <View
-                    style={[
-                      styles.detailSection,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.primary + "10",
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.sectionTitle,
-                        {
-                          color: colors.text,
-                          borderBottomColor: colors.border,
-                        },
-                      ]}
-                    >
-                      Installation Details
-                    </Text>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Installation Address:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {installationAddress}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Installation Fee:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {formatCurrency(selectedSubscription.installation_fee)}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.detailRow,
-                        { borderBottomColor: colors.primary + "05" },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.detailLabel,
-                          { color: colors.textLight },
-                        ]}
-                      >
-                        Payment Mode:
-                      </Text>
-                      <Text
-                        style={[styles.detailValue, { color: colors.text }]}
-                      >
-                        {selectedSubscription.installation_fee_payment_mode ||
-                          "N/A"}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Current Billing */}
-                  {selectedSubscription.billing &&
-                    selectedSubscription.billing.length > 0 && (
-                      <View
-                        style={[
-                          styles.detailSection,
-                          {
-                            backgroundColor: colors.surface,
-                            borderColor: colors.primary + "10",
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.sectionTitle,
-                            {
-                              color: colors.text,
-                              borderBottomColor: colors.border,
-                            },
-                          ]}
-                        >
-                          Current Billing
-                        </Text>
-
-                        <View
-                          style={[
-                            styles.detailRow,
-                            { borderBottomColor: colors.primary + "05" },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.detailLabel,
-                              { color: colors.textLight },
-                            ]}
-                          >
-                            Amount Due:
-                          </Text>
-                          <Text
-                            style={[styles.detailValue, { color: colors.text }]}
-                          >
-                            {formatCurrency(
-                              selectedSubscription.billing[0].amount_due,
-                            )}
-                          </Text>
-                        </View>
-
-                        <View
-                          style={[
-                            styles.detailRow,
-                            { borderBottomColor: colors.primary + "05" },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.detailLabel,
-                              { color: colors.textLight },
-                            ]}
-                          >
-                            Due Date:
-                          </Text>
-                          <Text
-                            style={[styles.detailValue, { color: colors.text }]}
-                          >
-                            {formatDate(
-                              selectedSubscription.billing[0].due_date,
-                            )}
-                          </Text>
-                        </View>
-
-                        <View
-                          style={[
-                            styles.detailRow,
-                            { borderBottomColor: colors.primary + "05" },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.detailLabel,
-                              { color: colors.textLight },
-                            ]}
-                          >
-                            Status:
-                          </Text>
-                          <Text
-                            style={[
-                              styles.detailValue,
-                              selectedSubscription.billing[0].status === "paid"
-                                ? { color: colors.primary, fontWeight: "600" }
-                                : { color: colors.danger, fontWeight: "600" },
-                            ]}
-                          >
-                            {selectedSubscription.billing[0].status?.toUpperCase() ||
-                              "N/A"}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-
-                  {/* View Billing History Button */}
-                  {selectedSubscription.billing &&
-                    selectedSubscription.billing.length > 0 && (
-                      <TouchableOpacity
-                        style={[
-                          styles.viewBillingHistoryButton,
-                          { backgroundColor: colors.primary },
-                        ]}
-                        onPress={() =>
-                          handleViewBillingHistory(selectedSubscription)
-                        }
-                      >
-                        <Ionicons
-                          name="receipt-outline"
-                          size={20}
-                          color={colors.white}
-                        />
-                        <Text style={styles.viewBillingHistoryButtonText}>
-                          View All Billing History (
-                          {selectedSubscription.billing.length})
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                </>
-              )}
-            </ScrollView>
+              <View style={[styles.footerIconContainer, { backgroundColor: colors.primary + "10" }]}>
+                {isViewDetailsLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons name="document-text-outline" size={30} color={colors.primary} />
+                )}
+              </View>
+              <Text style={[styles.footerButtonText, { color: colors.primary }]}>
+                {isViewDetailsLoading ? "Loading..." : "View Details"}
+              </Text>
+            </TouchableOpacity>
+            
+            {/* Billing History Button */}
+            {subscription.billing && subscription.billing.length > 0 && (
+              <TouchableOpacity 
+                style={styles.footerButton}
+                onPress={() => handleViewBillingHistory(subscription)}
+                disabled={isViewDetailsLoading || isBillingHistoryLoading}
+              >
+                <View style={[styles.footerIconContainer, { backgroundColor: colors.primary + "10" }]}>
+                  {isBillingHistoryLoading ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Ionicons name="receipt-outline" size={30} color={colors.primary} />
+                  )}
+                </View>
+                <Text style={[styles.footerButtonText, { color: colors.primary }]}>
+                  {isBillingHistoryLoading ? "Loading..." : "Billing History"}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
-      </Modal>
+      </View>
     );
   };
 
   if (loading && !refreshing) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Overlay />
+       
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textLight }]}>
@@ -1577,17 +816,23 @@ const SubscriptionScreen = () => {
   if (error) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Overlay />
+    
         <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={60} color={colors.danger} />
-          <Text style={[styles.errorText, { color: colors.danger }]}>
+          <View style={[styles.errorIconContainer, { backgroundColor: colors.danger + "10" }]}>
+            <Ionicons name="warning-outline" size={40} color={colors.danger} />
+          </View>
+          <Text style={[styles.errorTitle, { color: colors.text }]}>
+            Something went wrong
+          </Text>
+          <Text style={[styles.errorText, { color: colors.textLight }]}>
             {error}
           </Text>
           <TouchableOpacity
             style={[styles.retryButton, { backgroundColor: colors.primary }]}
             onPress={fetchSubscriptionData}
           >
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Ionicons name="refresh" size={20} color={colors.white} />
+            <Text style={styles.retryButtonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1596,12 +841,47 @@ const SubscriptionScreen = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Overlay />
+    
+      
+      {/* Header with Image Background */}
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent={true}
+      />
+      
+      {/* Background Image Container */}
+      <View style={styles.imageContainer}>
+        <ImageBackground
+          source={require("../../../../assets/images/subscriptionbg.png")}
+          style={styles.backgroundImage}
+          resizeMode="cover"
+        >
+          {/* Optional dark overlay for better text readability */}
+          <View style={styles.imageOverlay} />
+        </ImageBackground>
+        
+        {/* Summary Card positioned over the image */}
+        <View style={[
+          styles.summaryCard,
+        ]}>
+          <View style={styles.summaryHeader}>
+            <View style={styles.summaryContent}>
+              <Text style={[styles.summaryTitle, { color: colors.white }]}>
+                My Subscriptions
+              </Text>
+              
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Content */}
       <Animated.ScrollView
         ref={scrollViewRef}
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
+        style={[styles.scrollView, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1616,111 +896,164 @@ const SubscriptionScreen = () => {
           { useNativeDriver: false },
         )}
       >
-        <View style={styles.titleContainer}>
-          <Text style={[styles.titleText, { color: colors.text }]}>
-            My Subscriptions
-          </Text>
-          <Text style={[styles.subtitleText, { color: colors.textLight }]}>
-            {subscriptions.length} subscription
-            {subscriptions.length !== 1 ? "s" : ""} found
-          </Text>
+        
+        {/* Subscriptions List */}
+        <View style={styles.section}>
+          <Text style={[styles.summarySubtitle, { color: colors.text }]}>
+                {subscriptions.length} active subscription{subscriptions.length !== 1 ? 's' : ''}
+              </Text>
+          
+          {subscriptions.length === 0 ? (
+            <View style={styles.noDataContainer}>
+              <View style={[styles.noDataIconContainer, { backgroundColor: colors.primary + "10" }]}>
+                <Ionicons name="receipt-outline" size={40} color={colors.primary} />
+              </View>
+              <Text style={[styles.noDataTitle, { color: colors.text }]}>
+                No subscriptions found
+              </Text>
+              <Text style={[styles.noDataText, { color: colors.textLight }]}>
+                You don't have any active subscriptions yet.
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.refreshButton,
+                  {
+                    backgroundColor: colors.primary + "10",
+                    borderColor: colors.primary + "20",
+                  },
+                ]}
+                onPress={onRefresh}
+              >
+                <Ionicons name="refresh" size={18} color={colors.primary} />
+                <Text style={[styles.refreshButtonText, { color: colors.primary }]}>
+                  Refresh
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            subscriptions.map(renderSubscriptionCard)
+          )}
         </View>
 
-        {subscriptions.length === 0 ? (
-          <View style={styles.noDataContainer}>
-            <Ionicons name="receipt-outline" size={60} color={colors.gray} />
-            <Text style={[styles.noDataText, { color: colors.textLight }]}>
-              No subscriptions found
-            </Text>
-            <TouchableOpacity
-              style={[
-                styles.refreshButton,
-                {
-                  backgroundColor: colors.primary + "10",
-                  borderColor: colors.primary + "20",
-                },
-              ]}
-              onPress={onRefresh}
-            >
-              <Ionicons name="refresh" size={18} color={colors.primary} />
-              <Text
-                style={[styles.refreshButtonText, { color: colors.primary }]}
-              >
-                Refresh
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          subscriptions.map(renderSubscriptionCard)
-        )}
+        {/* Footer */}
+        <View style={[styles.footer, { borderTopColor: colors.border + "80" }]}>
+          <Text style={[styles.footerText, { color: colors.text }]}>
+            Kazibufast Network
+          </Text>
+          <Text style={[styles.footerRights, { color: colors.gray }]}>
+            © 2024 All rights reserved
+          </Text>
+        </View>
       </Animated.ScrollView>
 
       {/* Payment WebView Modal */}
-      <PaymentWebView />
-
-      {/* Billing History Modal */}
-      {renderDetailsModal()}
-      {renderBillingHistoryModal()}
+      <PaymentWebViewModal />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  loadingContainer: {
+  container: { 
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
+  // Background image container
+  imageContainer: {
+    height: 260,
+    position: 'relative',
   },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+  backgroundImage: {
+    width: '100%',
+    height: '100%',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    overflow: 'hidden',
+  },
+  imageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+  },
+  summaryCard: {
+    backgroundColor:'transparent',
+    position: 'absolute',
+    maxWidth:200,
+    top:205,
+    right:175,
     padding: 20,
+    elevation: 8,
+    zIndex: 10,
   },
-  errorText: {
-    fontSize: 16,
-    textAlign: "center",
-    marginVertical: 20,
+  summaryHeader: {
+    marginBottom: 20,
   },
-  retryButton: {
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 10,
+  summaryIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
   },
-  retryButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
-    fontSize: 16,
+  summaryContent: {
+    flex: 1,
   },
-  scrollView: { flex: 1 },
-  scrollContent: { paddingBottom: 20 },
-  titleContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 15,
+  summaryTitle: {
+    fontSize: 20,
+    fontWeight: "700",
   },
-  titleText: {
-    fontSize: 28,
-    fontWeight: "bold",
-  },
-  subtitleText: {
+  summarySubtitle: {
     fontSize: 14,
-    marginTop: 4,
+    opacity: 4,
+    left:5,
+    marginBottom:20
+  },
+  summaryStats: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingTop: 20,
+    borderTopWidth: 1,
+  },
+  statItem: {
+    alignItems: "center",
+    flex: 1,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    opacity: 0.7,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    marginHorizontal: 10,
+  },
+  scrollView: { 
+    flex: 1,
+    marginTop: 0,
+  },
+  scrollContent: { 
+    padding: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    paddingLeft: 4,
   },
   subscriptionCardContainer: {
-    marginHorizontal: 20,
-    marginBottom: 15,
+    marginBottom: 16,
   },
   subscriptionCard: {
     borderRadius: 16,
     padding: 20,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
@@ -1730,122 +1063,228 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
+  },
+  accountInfo: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    flex: 1,
+  },
+  accountIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#21C7B9",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  accountLabel: {
+    fontSize: 12,
+    marginBottom: 2,
   },
   accountNumber: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  cardBody: {
-    marginBottom: 16,
-  },
-  cardRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: "flex-start",
   },
-  cardLabel: {
-    fontSize: 14,
-    marginLeft: 8,
-    marginRight: 8,
-    width: 120,
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
   },
-  cardValue: {
+  statusText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  cardBody: {
+    marginBottom: 20,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  infoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  infoContent: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  infoValue: {
     fontSize: 14,
     fontWeight: "500",
-    flex: 1,
   },
-  addressValue: {
-    fontSize: 14,
+  datesContainer: {
+    flexDirection: "row",
+    marginBottom: 16,
+  },
+  dateColumn: {
     flex: 1,
-    fontStyle: "italic",
+    flexDirection: "row",
+    alignItems: "center",
   },
   currentBillingContainer: {
     borderRadius: 12,
     padding: 16,
-    marginTop: 16,
+    marginTop: 8,
     borderWidth: 1,
   },
-  billingInfoRow: {
+  billingHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  billingTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  billingStatusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  billingStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  billingStatus: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  billingDetails: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  billingAmountContainer: {
+    flex: 1,
+  },
+  billingDateContainer: {
+    flex: 1,
+    alignItems: "flex-end",
   },
   billingLabel: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: 12,
+    marginBottom: 4,
   },
   billingAmount: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
   },
   billingDate: {
     fontSize: 14,
     fontWeight: "500",
   },
-  billingStatus: {
-    fontSize: 12,
-    fontWeight: "600",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+  paymentButtonsContainer: {
+    gap: 8,
   },
-  payNowButton: {
+  paymentButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
     borderRadius: 10,
-    marginTop: 12,
   },
-  payNowButtonHistory: {
-    marginTop: 16,
-  },
-  payNowButtonDisabled: {
+  buttonDisabled: {
     opacity: 0.7,
   },
-  payNowIcon: {
+  buttonIcon: {
     marginRight: 8,
   },
-  payNowText: {
+  buttonText: {
     color: "#FFFFFF",
     fontWeight: "600",
     fontSize: 14,
-    marginLeft: 6,
+  },
+  statusMessageContainer: {
+    marginTop: 12,
+  },
+  statusMessage: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 8,
+    borderRadius: 8,
+  },
+  statusMessageText: {
+    fontSize: 12,
+    fontWeight: "500",
+    marginLeft: 8,
+    flex: 1,
   },
   cardFooter: {
-    borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingTop: 16,
+    borderTopWidth: 1,
   },
-  viewDetailsText: {
-    fontSize: 14,
-    textAlign: "center",
-    fontWeight: "500",
+  footerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  chevronIcon: {
-    marginLeft: 4,
+  footerIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  footerButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   noDataContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 60,
+    paddingVertical: 40,
     paddingHorizontal: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 16,
+    marginTop: 10,
+  },
+  noDataIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  noDataTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
   },
   noDataText: {
-    fontSize: 16,
-    marginTop: 12,
-    marginBottom: 20,
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 20,
   },
   refreshButton: {
     flexDirection: "row",
@@ -1854,225 +1293,28 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
+    gap: 8,
   },
   refreshButtonText: {
-    marginLeft: 8,
     fontWeight: "600",
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-  },
-  modalContainer: {
-    flex: 1,
-    marginTop: 50,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
-  },
-  modalBackButton: {
-    padding: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    flex: 1,
-    textAlign: "center",
-  },
-  modalCloseButton: {
-    padding: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  // NEW: Loading details styles
-  detailsLoadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 10,
-    borderBottomWidth: 1,
-  },
-  detailsLoadingText: {
     fontSize: 14,
-    marginLeft: 10,
   },
-  modalSubheader: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+  footer: {
+    alignItems: "center",
+    paddingTop: 20,
+    borderTopWidth: 1,
+    marginTop: 20,
   },
-  modalSubtitle: {
-    fontSize: 16,
+  footerText: {
+    fontSize: 14,
     fontWeight: "600",
     marginBottom: 4,
   },
-  billingCount: {
-    fontSize: 14,
+  footerRights: {
+    fontSize: 11,
+    marginBottom: 4,
   },
-  modalContent: {
-    flex: 1,
-  },
-  modalContentContainer: {
-    padding: 20,
-    paddingBottom: 40,
-    flexGrow: 1,
-  },
-  detailSection: {
-    marginBottom: 24,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-  },
-  detailRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 14,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-  },
-  detailLabel: {
-    fontSize: 14,
-    fontWeight: "500",
-    flex: 1,
-  },
-  detailValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    flex: 1,
-    textAlign: "right",
-  },
-  detailStatusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    minWidth: 80,
-    alignItems: "center",
-  },
-  detailStatusText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  viewBillingHistoryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 8,
-    marginBottom: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  viewBillingHistoryButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
-    fontSize: 16,
-    marginLeft: 8,
-  },
-  // Billing History Styles
-  billingList: {
-    paddingBottom: 10,
-  },
-  billingSeparator: {
-    height: 12,
-  },
-  billingHistoryCard: {
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  billingHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  billingPeriod: {
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  billingDateRange: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  billingStatusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  billingStatusText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  billingDetails: {
-    marginTop: 12,
-  },
-  billingRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  billingDetailLabel: {
-    fontSize: 14,
-  },
-  billingDetailValue: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  penaltyLabel: {},
-  penaltyValue: {
-    fontWeight: "600",
-  },
-  noBillingContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-  },
-  noBillingText: {
-    fontSize: 16,
-    marginTop: 12,
-  },
-  noBillingSubtext: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  // WebView Styles
+  // WebView styles
   webviewContainer: {
     flex: 1,
   },
@@ -2121,6 +1363,54 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  errorIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 30,
+    lineHeight: 20,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 16,
+  },
 });
 
-export default SubscriptionScreen;
+export default MySubscriptionsScreen;

@@ -19,6 +19,7 @@ import {
   View,
   Animated,
   Dimensions,
+  PanResponder,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../theme/ThemeContext";
@@ -33,27 +34,41 @@ const getUserTicketsKey = (userId) => `kazi_support_tickets_${userId}`;
 
 // ==================== FIXED: Ticket data structure creation ====================
 // ==================== FIXED: Ticket data structure creation ====================
-const createTicketData = (backendTicketId, subject, subscription, attachments = []) => {
+const createTicketData = (
+  backendTicketId,
+  subject,
+  subscription,
+  attachments = [],
+) => {
   if (!backendTicketId) {
     throw new Error("Backend ticket ID is required");
   }
-  
+
+  // CRITICAL: Validate ticket ID format
+  // Should not be a timestamp or subscription ID
+  if (
+    backendTicketId.toString().length < 3 ||
+    backendTicketId.toString() === subscription.id.toString() ||
+    backendTicketId.toString() === subscription.subscription_id.toString()
+  ) {
+    throw new Error("Invalid ticket ID received from backend");
+  }
+
   const now = new Date();
-  
+
   // Format attachments
   const formattedAttachments = attachments.map((attachment, index) => ({
     uri: attachment.uri,
     id: `attachment_${Date.now()}_${index}`,
     name: attachment.name || `image_${index}.jpg`,
-    type: 'image'
+    type: "image",
   }));
 
-  // CRITICAL: Use ONLY the backend ticket ID
   return {
-    id: backendTicketId, // Use backend ID as the primary ID
+    id: backendTicketId,
     ticketNumber: backendTicketId,
     subject: subject,
-    description: `Support request for subscription: ${subscription.plan?.name || 'Unknown Plan'}`,
+    description: `Support request for subscription: ${subscription.plan?.name || "Unknown Plan"}`,
     status: "submitted",
     priority: "medium",
     category: "Technical Support",
@@ -64,10 +79,12 @@ const createTicketData = (backendTicketId, subject, subscription, attachments = 
     assignedTo: null,
     lastResponse: null,
     formattedDate: now.toLocaleDateString(),
-    formattedTime: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    subscription_id:subscription.subscription_id,
-    subscription_name: subscription.plan?.name || 'Unknown Subscription',
-    // Add backend sync status
+    formattedTime: now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+    subscription_id: subscription.id || subscription.subscription_id,
+    subscription_name: subscription.plan?.name || "Unknown Subscription",
     backendId: backendTicketId,
     isSynced: true,
     syncDate: now.toISOString(),
@@ -78,27 +95,20 @@ const createTicketData = (backendTicketId, subject, subscription, attachments = 
 const debugTicketStorage = async (userId) => {
   try {
     if (!userId) {
-     
       return;
     }
 
     const userTicketsKey = getUserTicketsKey(userId);
     const stored = await AsyncStorage.getItem(userTicketsKey);
-    
 
     if (stored) {
       const tickets = JSON.parse(stored);
-    
+
       if (tickets.length > 0) {
-    
       }
     } else {
-   
     }
-    
-  } catch (error) {
-    
-  }
+  } catch (error) {}
 };
 
 // Custom styles generator based on theme
@@ -662,30 +672,52 @@ const getStyles = (colors) => ({
   },
 });
 
-// Floating Button Component
 const FloatingButton = ({
   unreadCount = 0,
   onPress,
   isVisible = true,
   colors,
+  pan,
+  panHandlers,
 }) => {
   if (!isVisible) return null;
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={[getStyles(colors).floatingButton]}
-    >
-      <Ionicons name="chatbubble-ellipses" size={28} color={colors.white} />
-      {unreadCount > 0 && (
-        <View style={getStyles(colors).unreadBadge}>
-          <Text style={getStyles(colors).unreadText}>
-            {Math.min(unreadCount, 9)}
-          </Text>
-        </View>
-      )}
-    </TouchableOpacity>
+    <Animated.View
+  {...panHandlers}
+  style={[
+    getStyles(colors).floatingButton,
+    {
+      bottom: undefined,
+      right: undefined,
+      transform: pan.getTranslateTransform(),
+    },
+  ]}
+>
+
+      {/* IMPORTANT: Touchable INSIDE Animated.View */}
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={onPress}
+        style={{
+          width: BUTTON_SIZE,
+          height: BUTTON_SIZE,
+          borderRadius: BUTTON_SIZE / 2,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <Ionicons name="chatbubble-ellipses" size={28} color={colors.white} />
+
+        {unreadCount > 0 && (
+          <View style={getStyles(colors).unreadBadge}>
+            <Text style={getStyles(colors).unreadText}>
+              {Math.min(unreadCount, 9)}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
   );
 };
 
@@ -777,11 +809,68 @@ const ChatBot = () => {
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
   const [subscriptions, setSubscriptions] = useState([]);
   const [selectedSubscription, setSelectedSubscription] = useState(null);
-  const [showSubscriptionDropdown, setShowSubscriptionDropdown] = useState(false);
+  const [showSubscriptionDropdown, setShowSubscriptionDropdown] =
+    useState(false);
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
 
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
+
+  const EDGE_PADDING = 12;
+  const BUTTON_SIZE = 60;
+
+  const MIN_Y = 80; // avoid status bar
+  const MAX_Y = SCREEN_HEIGHT - BUTTON_SIZE - 120; // avoid tab bar
+
+  const pan = useRef(
+    new Animated.ValueXY({
+      x: SCREEN_WIDTH - BUTTON_SIZE - 20, // initial X
+      y: SCREEN_HEIGHT - 200, // initial Y
+    }),
+  ).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      // Allow drag when finger MOVES
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dx) > 3 || Math.abs(gesture.dy) > 3,
+
+      onPanResponderGrant: () => {
+        pan.setOffset({
+          x: pan.x._value,
+          y: pan.y._value,
+        });
+        pan.setValue({ x: 0, y: 0 });
+      },
+
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+
+      onPanResponderRelease: (_, gesture) => {
+        pan.flattenOffset();
+
+        const middleX = SCREEN_WIDTH / 2;
+
+        // Decide snap side
+        const snapX =
+          pan.x._value + BUTTON_SIZE / 2 < middleX
+            ? EDGE_PADDING
+            : SCREEN_WIDTH - BUTTON_SIZE - EDGE_PADDING;
+
+        // Clamp Y (prevent going off screen)
+        let snapY = pan.y._value;
+        if (snapY < MIN_Y) snapY = MIN_Y;
+        if (snapY > MAX_Y) snapY = MAX_Y;
+
+        Animated.spring(pan, {
+          toValue: { x: snapX, y: snapY },
+          useNativeDriver: false,
+          friction: 6,
+        }).start();
+      },
+    }),
+  ).current;
 
   // Contact information
   const contactInfo = {
@@ -928,17 +1017,19 @@ const ChatBot = () => {
           originalData: sub,
         };
       });
-      
+
       setSubscriptions(formattedSubscriptions);
 
       // Auto-select first subscription
       if (formattedSubscriptions.length === 1) {
         setSelectedSubscription(formattedSubscriptions[0]);
       } else if (formattedSubscriptions.length === 0) {
-        Alert.alert("No Subscriptions", "You don't have any active subscriptions.");
+        Alert.alert(
+          "No Subscriptions",
+          "You don't have any active subscriptions.",
+        );
       }
     } catch (error) {
-     
       Alert.alert("Error", "Failed to load subscriptions. Please try again.");
       setSubscriptions([]);
     } finally {
@@ -950,13 +1041,15 @@ const ChatBot = () => {
   const loadMessages = async () => {
     try {
       if (!user || !user.id) {
-        setMessages([{
-          id: "1",
-          text: "Hi there! 👋 I'm Kazi Assistant. I'm here to help you with internet issues. How can I assist you today?",
-          sender: "bot",
-          timestamp: new Date(),
-          type: "greeting",
-        }]);
+        setMessages([
+          {
+            id: "1",
+            text: "Hi there! 👋 I'm Kazi Assistant. I'm here to help you with internet issues. How can I assist you today?",
+            sender: "bot",
+            timestamp: new Date(),
+            type: "greeting",
+          },
+        ]);
         return;
       }
 
@@ -971,17 +1064,17 @@ const ChatBot = () => {
         }));
         setMessages(messagesWithDates);
       } else {
-        setMessages([{
-          id: "1",
-          text: "Hi there! 👋 I'm Kazi Assistant. I'm here to help you with internet issues. How can I assist you today?",
-          sender: "bot",
-          timestamp: new Date(),
-          type: "greeting",
-        }]);
+        setMessages([
+          {
+            id: "1",
+            text: "Hi there! 👋 I'm Kazi Assistant. I'm here to help you with internet issues. How can I assist you today?",
+            sender: "bot",
+            timestamp: new Date(),
+            type: "greeting",
+          },
+        ]);
       }
-    } catch (error) {
-     
-    }
+    } catch (error) {}
   };
 
   const saveMessages = async (newMessages) => {
@@ -989,9 +1082,7 @@ const ChatBot = () => {
       if (!user || !user.id) return;
       const userMessagesKey = getUserMessagesKey(user.id);
       await AsyncStorage.setItem(userMessagesKey, JSON.stringify(newMessages));
-    } catch (error) {
-      
-    }
+    } catch (error) {}
   };
 
   // ==================== FIXED: Handle quick replies ====================
@@ -1011,8 +1102,10 @@ const ChatBot = () => {
     let context = null;
     if (question === "No internet connection") context = "no_internet";
     else if (question === "Slow internet connection") context = "slow_internet";
-    else if (question === "Can't access certain websites or apps") context = "cant_access_websites";
-    else if (question === "How to change my Wi-Fi password?") context = "change_password";
+    else if (question === "Can't access certain websites or apps")
+      context = "cant_access_websites";
+    else if (question === "How to change my Wi-Fi password?")
+      context = "change_password";
 
     setConversationContext(context);
 
@@ -1055,12 +1148,20 @@ const ChatBot = () => {
         botText = "Is your router powered on and showing any lights?";
         setCurrentQuestion("router_working");
         showYesNo = true;
-      } else if (response === "My router has no red light, but I still don't have internet") {
-        botText = "Please try restarting your modem or router. Unplug both devices, wait 30 seconds, then plug them back in. Did restarting help?";
+      } else if (
+        response ===
+        "My router has no red light, but I still don't have internet"
+      ) {
+        botText =
+          "Please try restarting your modem or router. Unplug both devices, wait 30 seconds, then plug them back in. Did restarting help?";
         setCurrentQuestion("no_internet");
         showYesNo = true;
-      } else if (response === "My router is working, but I can't see the Wi-Fi name on the list") {
-        botText = "If your router is working but you can't see the Wi-Fi name, try moving closer to the router or restarting it. Can you see the Wi-Fi name now?";
+      } else if (
+        response ===
+        "My router is working, but I can't see the Wi-Fi name on the list"
+      ) {
+        botText =
+          "If your router is working but you can't see the Wi-Fi name, try moving closer to the router or restarting it. Can you see the Wi-Fi name now?";
         setCurrentQuestion("wifi_name_visible");
         showYesNo = true;
       }
@@ -1099,52 +1200,62 @@ const ChatBot = () => {
 
       if (currentQuestion === "red_light") {
         if (response) {
-          botText = "A blinking red light indicates a connection issue with your service provider. Please contact our support team for immediate assistance.";
+          botText =
+            "A blinking red light indicates a connection issue with your service provider. Please contact our support team for immediate assistance.";
           setShowContactInfo(true);
           setShowTicketPrompt(true);
         } else {
-          botText = "Please try these steps:\n\n1. Restart your modem (unplug for 30 seconds)\n2. Restart your router\n3. Check all cable connections\n\nDid restarting help?";
+          botText =
+            "Please try these steps:\n\n1. Restart your modem (unplug for 30 seconds)\n2. Restart your router\n3. Check all cable connections\n\nDid restarting help?";
           setShowRestartOptions(true);
         }
       } else if (currentQuestion === "router_working") {
         if (response) {
-          botText = "Since your router has power lights, the issue might be with your modem or service. Please try restarting both your modem and router.";
+          botText =
+            "Since your router has power lights, the issue might be with your modem or service. Please try restarting both your modem and router.";
           setShowRestartOptions(true);
         } else {
-          botText = "If your router has no lights, it may not be receiving power. Check the power connection and outlet. If it still doesn't work, please contact our support team.";
+          botText =
+            "If your router has no lights, it may not be receiving power. Check the power connection and outlet. If it still doesn't work, please contact our support team.";
           setShowContactInfo(true);
           setShowTicketPrompt(true);
         }
       } else if (currentQuestion === "no_internet") {
         if (response) {
-          botText = "Great! I'm glad restarting solved the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
+          botText =
+            "Great! I'm glad restarting solved the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
           setConversationContext(null);
           setShowContactInfo(false);
           setShowTicketPrompt(false);
         } else {
-          botText = "I understand. Since restarting didn't resolve the issue, there may be a service problem or equipment malfunction. Please contact our support team for further assistance.";
+          botText =
+            "I understand. Since restarting didn't resolve the issue, there may be a service problem or equipment malfunction. Please contact our support team for further assistance.";
           setShowContactInfo(true);
           setShowTicketPrompt(true);
         }
       } else if (currentQuestion === "wifi_name_visible") {
         if (response) {
-          botText = "Great! Moving closer solved the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
+          botText =
+            "Great! Moving closer solved the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
           setConversationContext(null);
           setShowContactInfo(false);
           setShowTicketPrompt(false);
         } else {
-          botText = "Check if the WLAN/Wi-Fi light is on. If it's off, press and hold the WLAN button at the back of the router for 10 seconds. Did that fix the issue?";
+          botText =
+            "Check if the WLAN/Wi-Fi light is on. If it's off, press and hold the WLAN button at the back of the router for 10 seconds. Did that fix the issue?";
           setCurrentQuestion("wlan_light_check");
           setShowYesNoQuestion(true);
         }
       } else if (currentQuestion === "wlan_light_check") {
         if (response) {
-          botText = "Great! I'm glad that fixed the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
+          botText =
+            "Great! I'm glad that fixed the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
           setConversationContext(null);
           setShowContactInfo(false);
           setShowTicketPrompt(false);
         } else {
-          botText = "I understand. Since you still can't see the Wi-Fi name, there may be an issue with your router's wireless functionality. Please contact our support team for further assistance.";
+          botText =
+            "I understand. Since you still can't see the Wi-Fi name, there may be an issue with your router's wireless functionality. Please contact our support team for further assistance.";
           setShowContactInfo(true);
           setShowTicketPrompt(true);
         }
@@ -1181,12 +1292,16 @@ const ChatBot = () => {
     setTimeout(() => {
       let botText = "";
 
-      if (response === "I've already restarted but still no internet connection") {
-        botText = "I understand. Since restarting didn't resolve the issue, there may be a service problem or equipment malfunction. Please contact our support team for further assistance.";
+      if (
+        response === "I've already restarted but still no internet connection"
+      ) {
+        botText =
+          "I understand. Since restarting didn't resolve the issue, there may be a service problem or equipment malfunction. Please contact our support team for further assistance.";
         setShowContactInfo(true);
         setShowTicketPrompt(true);
       } else if (response === "I've restarted the modem and it works now") {
-        botText = "Great! I'm glad restarting solved the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
+        botText =
+          "Great! I'm glad restarting solved the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
         setConversationContext(null);
         setShowContactInfo(false);
         setShowTicketPrompt(false);
@@ -1210,7 +1325,9 @@ const ChatBot = () => {
   const handleSlowInternetYesNo = async (response) => {
     const userMsg = {
       id: Date.now().toString(),
-      text: response ? "Yes, I've restarted but still slow" : "No, I haven't restarted yet",
+      text: response
+        ? "Yes, I've restarted but still slow"
+        : "No, I haven't restarted yet",
       sender: "user",
       timestamp: new Date(),
     };
@@ -1227,12 +1344,14 @@ const ChatBot = () => {
       let botText = "";
 
       if (response) {
-        botText = "I understand you've already restarted but are still experiencing slow speeds. This could be due to network congestion, equipment issues, or service problems. Please contact our support team for further investigation.";
+        botText =
+          "I understand you've already restarted but are still experiencing slow speeds. This could be due to network congestion, equipment issues, or service problems. Please contact our support team for further investigation.";
         setShowContactInfo(true);
         setShowTicketPrompt(true);
         setConversationContext(null);
       } else {
-        botText = "Please try restarting your modem and router first. Unplug both devices, wait 30 seconds, then plug them back in. This often resolves speed issues. Let me know if this helps!";
+        botText =
+          "Please try restarting your modem and router first. Unplug both devices, wait 30 seconds, then plug them back in. This often resolves speed issues. Let me know if this helps!";
         setConversationContext("slow_internet_waiting");
       }
 
@@ -1337,190 +1456,229 @@ const ChatBot = () => {
   };
 
   // ==================== CRITICAL FIX: Ticket submission ====================
-const submitTicket = async () => {
-  if (!ticketSubject.trim()) {
-    Alert.alert("Required", "Please describe your issue.");
-    return;
-  }
-
-  if (!selectedSubscription) {
-    Alert.alert("Required", "Please select a subscription.");
-    return;
-  }
-
-  setIsSubmittingTicket(true);
-
-  try {
-    const token = await AsyncStorage.getItem("token");
-    if (!token) {
-      Alert.alert("Error", "You need to be logged in to create a ticket.");
-      setIsSubmittingTicket(false);
+  const submitTicket = async () => {
+    if (!ticketSubject.trim()) {
+      Alert.alert("Required", "Please describe your issue.");
       return;
     }
 
-    if (!user || !user.id) {
-      Alert.alert("Error", "User information not found.");
-      setIsSubmittingTicket(false);
+    if (!selectedSubscription) {
+      Alert.alert("Required", "Please select a subscription.");
       return;
     }
 
-    const subscriptionId = selectedSubscription.id;
-    if (!subscriptionId) {
-      Alert.alert("Error", "No valid subscription ID found.");
-      setIsSubmittingTicket(false);
-      return;
-    }
+    setIsSubmittingTicket(true);
 
-
-    
-    // Try to call API with FormData
-    let backendTicketId = null;
-    let apiSuccess = false;
-    let apiResponseData = null;
-    
     try {
-      // Create FormData for backend submission (similar to handleSubmitCompleted)
+      const token = await AsyncStorage.getItem("token");
+      if (!token) {
+        Alert.alert("Error", "You need to be logged in to create a ticket.");
+        setIsSubmittingTicket(false);
+        return;
+      }
+
+      if (!user || !user.id) {
+        Alert.alert("Error", "User information not found.");
+        setIsSubmittingTicket(false);
+        return;
+      }
+
+      const subscriptionId = selectedSubscription.id;
+      if (!subscriptionId) {
+        Alert.alert("Error", "No valid subscription ID found.");
+        setIsSubmittingTicket(false);
+        return;
+      }
+
+      // Create FormData for backend submission
       const formData = new FormData();
-      
+
       // Add text fields
       formData.append("subject", ticketSubject);
-      formData.append("description", `User reported issue for subscription ${selectedSubscription.plan?.name || "N/A"}: ${ticketSubject}`);
+      formData.append("description", `Support request: ${ticketSubject}`);
       formData.append("category", "Technical Support");
       formData.append("priority", "medium");
       formData.append("subscription_id", subscriptionId);
       formData.append("user_id", user.id.toString());
-      formData.append("source", "Chat Support");
+      formData.append("source", "Chatbot");
 
-      // Helper function to append images - SAME as handleSubmitCompleted
-      const appendImage = (fieldName, uri) => {
-        if (!uri) return;
-
-        // Extract filename from URI
-        const filename = uri.split('/').pop();
-        
-        // Determine MIME type from filename extension
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : "image/jpeg";
-
-        formData.append(fieldName, {
-          uri: uri,
-          name: filename,
-          type: type,
-        });
-      };
-
-      // Append all ticket attachments as images
+      // Append attachments - FIXED VERSION
       if (ticketAttachments && ticketAttachments.length > 0) {
         ticketAttachments.forEach((attachment, index) => {
-          // Append each image individually
-          appendImage(`attachments[${index}]`, attachment.uri);
+          // Extract filename from URI
+          const uriParts = attachment.uri.split("/");
+          const filename = uriParts[uriParts.length - 1];
+
+          // Determine MIME type based on file extension
+          let type = "image/jpeg"; // default
+          if (filename.toLowerCase().endsWith(".png")) {
+            type = "image/png";
+          } else if (filename.toLowerCase().endsWith(".gif")) {
+            type = "image/gif";
+          }
+
+          // CORRECT WAY to append file to FormData
+          // Use the same field name for all images (some backends use 'attachments[]', some use 'images[]')
+          formData.append("attachments[]", {
+            uri: attachment.uri,
+            type: type,
+            name: filename,
+          });
+
+          // ALTERNATIVE: Try without array brackets if above doesn't work
+          // formData.append('picture', {
+          //   uri: attachment.uri,
+          //   type: type,
+          //   name: filename,
+          // });
         });
+      } else {
       }
 
+      for (let pair of formData.entries()) {
+      }
 
-
-      // Send with FormData like handleSubmitCompleted
+      // IMPORTANT: DON'T set Content-Type header manually for FormData
+      // Let the browser set it with the correct boundary
       const response = await fetch(
         `https://staging.kazibufastnet.com/api/app/tickets/create`,
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
+            // DO NOT set Content-Type here - FormData will set it automatically
             Accept: "application/json",
           },
           body: formData,
-        }
+        },
       );
+      const responseText = await response.text();
 
-      if (response.ok) {
-        const responseText = await response.text();
-        
-        
+      if (!response.ok) {
+
+        // Try to parse error message
+        let errorMessage = "Failed to create ticket. Please try again.";
         try {
-          apiResponseData = JSON.parse(responseText);
-          // Extract ticket ID from response - CHECK ticket_number FIRST
-          if (apiResponseData.ticket_number) {
-            backendTicketId = apiResponseData.ticket_number;
-            apiSuccess = true;
-          } else if (apiResponseData.data?.ticket_number) {
-            backendTicketId = apiResponseData.data.ticket_number;
-            apiSuccess = true;
-          } else if (apiResponseData.ticket?.ticket_number) {
-            backendTicketId = apiResponseData.ticket.ticket_number;
-            apiSuccess = true;
-          } else if (apiResponseData.ticket_id) {
-            backendTicketId = apiResponseData.ticket_id;
-            apiSuccess = true;
-          } else if (apiResponseData.id) {
-            backendTicketId = apiResponseData.id;
-            apiSuccess = true;
-          } else if (apiResponseData.data?.ticket_id) {
-            backendTicketId = apiResponseData.data.ticket_id;
-            apiSuccess = true;
-          } else if (apiResponseData.data?.id) {
-            backendTicketId = apiResponseData.data.id;
-            apiSuccess = true;
-          } else if (apiResponseData.ticket?.id) {
-            backendTicketId = apiResponseData.ticket.id;
-            apiSuccess = true;
-          } else if (apiResponseData.message) {
-            // Try to extract ticket ID from message
-            const match = apiResponseData.message.match(/TICKET-\w+/);
-            if (match) {
-              backendTicketId = match[0];
-              apiSuccess = true;
-            }
+          const errorData = JSON.parse(responseText);
+          if (errorData.message) {
+            errorMessage = errorData.message;
           }
-          
-          if (apiSuccess && backendTicketId) {
-           
-          } else {
-           
-            Alert.alert("Warning", "Ticket created but no ticket ID received from server.");
+          if (errorData.errors) {
+            errorMessage = Object.values(errorData.errors).flat().join(", ");
           }
         } catch (e) {
-         
+          // Not JSON, use text as is
+          if (
+            responseText.includes("validation") ||
+            responseText.includes("Invalid")
+          ) {
+            errorMessage = "Please check your input and try again.";
+          }
         }
-      } else {
-        // Log detailed error
-        const errorText = await response.text();
-        console.error("API error response:", {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorText
-        });
-        throw new Error(`API Error: ${response.status} - ${response.statusText}`);
+
+        Alert.alert("Error", errorMessage);
+        setIsSubmittingTicket(false);
+        return;
       }
-    } catch (apiError) {
-      
-      // Continue with local storage even if API fails
-    }
 
-    // IMPORTANT: Check if we have backendTicketId before creating ticket data
-    if (!backendTicketId) {
-      // If no backend ID, generate a temporary one but mark as unsynced
-      backendTicketId = `TEMP-${subscriptionId}-${Date.now().toString().slice(-6)}`;
-      
-    }
+      let apiResponseData;
+      try {
+        apiResponseData = JSON.parse(responseText);
+      } catch (e) {
+        Alert.alert("Error", "Invalid response from server.");
+        setIsSubmittingTicket(false);
+        return;
+      }
+      let savedAttachments = [];
 
-    try {
-      // Create ticket data with CORRECT structure - YOUR FUNCTION REQUIRES backendTicketId
-      const newTicket = createTicketData(
-        backendTicketId, // This is the backend ticket_number
-        ticketSubject,
-        selectedSubscription,
-        ticketAttachments
-      );
+      if (apiResponseData.data?.attachments) {
+        savedAttachments = apiResponseData.data.attachments;
+      } else if (apiResponseData.ticket?.attachments) {
+        savedAttachments = apiResponseData.ticket.attachments;
+      } else if (apiResponseData.attachments) {
+        savedAttachments = apiResponseData.attachments;
+      }
 
+      if (savedAttachments.length > 0) {
+      } else {
+      }
 
+      // ============ EXTRACT BACKEND DATABASE ID ============
+      let backendId = null;
+      let ticketNumber = null;
 
-      // CRITICAL: Save to AsyncStorage with the SAME key as tickets screen
+      // Try different response structures
+      if (apiResponseData.data?.id) {
+        backendId = apiResponseData.data.id;
+        ticketNumber = apiResponseData.data.ticket_number;
+      } else if (apiResponseData.id) {
+        backendId = apiResponseData.id;
+        ticketNumber = apiResponseData.ticket_number;
+      } else if (apiResponseData.ticket?.id) {
+        backendId = apiResponseData.ticket.id;
+        ticketNumber = apiResponseData.ticket.ticket_number;
+      } else if (apiResponseData.ticket_id) {
+        backendId = apiResponseData.ticket_id;
+        ticketNumber = apiResponseData.ticket_number;
+      }
+
+      if (!backendId) {
+        Alert.alert(
+          "Warning",
+          "Ticket created but no valid ticket ID received from server.",
+        );
+        setIsSubmittingTicket(false);
+        return;
+      }
+
+      // ============ CREATE TICKET WITH PROPER IDS ============
+      const newTicket = {
+        id: backendId,
+        backendId: backendId,
+        ticketNumber: ticketNumber || `TKT-${backendId}`,
+        subject: ticketSubject,
+        description: `Support request: ${ticketSubject}`,
+        status: "submitted",
+        priority: "medium",
+        category: "Technical Support",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        // Use saved attachments from API if available, otherwise use local ones
+        attachments:
+          savedAttachments.length > 0
+            ? savedAttachments.map((att) => ({
+                uri: att.url || att.uri || att,
+                name: att.name || `attachment_${Date.now()}`,
+                type: "image",
+              }))
+            : ticketAttachments.map((att) => ({
+                uri: att.uri,
+                name: att.name,
+                type: "image",
+              })),
+        assignedTo: null,
+        lastResponse: null,
+        responseCount: 0,
+        formattedDate: new Date().toLocaleDateString(),
+        formattedTime: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        source: "api",
+        subscription_id: subscriptionId,
+        subscription_name:
+          selectedSubscription.plan?.name ||
+          selectedSubscription.subscription_id ||
+          "Unknown",
+        isSynced: true,
+        syncDate: new Date().toISOString(),
+      };
+
+      // ============ SAVE TO ASYNCSTORAGE ============
       const userTicketsKey = getUserTicketsKey(user.id);
-      
-      // Load existing tickets
       const existingTicketsJson = await AsyncStorage.getItem(userTicketsKey);
       let ticketsArray = [];
-      
+
       if (existingTicketsJson) {
         try {
           ticketsArray = JSON.parse(existingTicketsJson);
@@ -1532,29 +1690,17 @@ const submitTicket = async () => {
         }
       }
 
-      // Check if ticket with same ID already exists (avoid duplicates)
-      const existingIndex = ticketsArray.findIndex(t => t.id === backendTicketId);
-      if (existingIndex !== -1) {
-        // Update existing ticket
-        ticketsArray[existingIndex] = newTicket;
-       
-      } else {
-        // Add new ticket to beginning (most recent first)
-        ticketsArray.unshift(newTicket);
-      
-      }
-
-      // Save back
+      ticketsArray = ticketsArray.filter(
+        (t) => t.id !== backendId && t.backendId !== backendId,
+      );
+      ticketsArray.unshift(newTicket);
       await AsyncStorage.setItem(userTicketsKey, JSON.stringify(ticketsArray));
 
-      
-      // Verify save
-      await debugTicketStorage(user.id);
 
-      // Add success message to chat - use the actual ticket ID
+      // ============ UPDATE CHAT MESSAGES ============
       const successMsg = {
         id: Date.now().toString(),
-        text: `✅ Ticket ${apiSuccess ? 'Created and Sent' : 'Saved Locally'} Successfully!\n\nTicket ID: ${backendTicketId}\nSubscription: ${selectedSubscription.plan?.name || "N/A"}\nStatus: ${apiSuccess ? 'Submitted' : 'Pending Sync'}\n\nYou can view this ticket in the Tickets section.`,
+        text: `✅ Ticket Created Successfully!\n\nTicket ID: ${ticketNumber || backendId}\nStatus: Submitted\nSubscription: ${selectedSubscription.plan?.name || "N/A"}\n\nYou can view this ticket in the Tickets section.`,
         sender: "bot",
         timestamp: new Date(),
       };
@@ -1563,7 +1709,7 @@ const submitTicket = async () => {
       setMessages(updatedMessages);
       saveMessages(updatedMessages);
 
-      // Reset and close
+      // ============ RESET AND CLOSE ============
       setTicketSubject("");
       setTicketAttachments([]);
       setTicketModalVisible(false);
@@ -1575,9 +1721,10 @@ const submitTicket = async () => {
       setSelectedSubscription(null);
       setShowSubscriptionDropdown(false);
 
+      // ============ SHOW SUCCESS ALERT ============
       Alert.alert(
-        `Success! ${apiSuccess ? '🎫' : '📱'}`,
-        `Ticket ${backendTicketId} has been ${apiSuccess ? 'created and sent to support' : 'saved locally'}.\n\nIt will appear in your Tickets list.`,
+        "Ticket Submitted! 🎫",
+        `Ticket ${ticketNumber || backendId} has been created successfully.\n\nOur support team will review it and contact you soon.`,
         [
           {
             text: "View Tickets",
@@ -1589,21 +1736,15 @@ const submitTicket = async () => {
             text: "OK",
             style: "default",
           },
-        ]
+        ],
       );
-
-    } catch (createError) {
-    
-      Alert.alert("Error", "Failed to create ticket data. Please try again.");
+    } catch (error) {
+      Alert.alert("Error", "An unexpected error occurred. Please try again.");
+    } finally {
+      setIsSubmittingTicket(false);
     }
+  };
 
-  } catch (error) {
- 
-    Alert.alert("Error", "Failed to create ticket. Please try again.");
-  } finally {
-    setIsSubmittingTicket(false);
-  }
-};
   // ==================== FIXED: Open ticket form ====================
   const openTicketForm = () => {
     const lastUserMessage = messages
@@ -1637,9 +1778,7 @@ const submitTicket = async () => {
           },
         ]);
       }
-    } catch (error) {
-    
-    }
+    } catch (error) {}
   };
 
   const removeTicketAttachment = (id) => {
@@ -1661,7 +1800,8 @@ const submitTicket = async () => {
           ]}
         >
           {selectedSubscription
-            ? selectedSubscription.subscription_id || `Subscription #${selectedSubscription.id}`
+            ? selectedSubscription.subscription_id ||
+              `Subscription #${selectedSubscription.id}`
             : loadingSubscriptions
               ? "Loading subscriptions..."
               : "Select a subscription *"}
@@ -1681,20 +1821,29 @@ const submitTicket = async () => {
           {loadingSubscriptions ? (
             <View style={styles.dropdownItem}>
               <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={{ textAlign: "center", marginTop: 8, color: colors.textLight }}>
+              <Text
+                style={{
+                  textAlign: "center",
+                  marginTop: 8,
+                  color: colors.textLight,
+                }}
+              >
                 Loading subscriptions...
               </Text>
             </View>
           ) : subscriptions.length > 0 ? (
             <ScrollView style={{ maxHeight: 200 }}>
               {subscriptions.map((subscription) => {
-                const address = getSubscriptionAddress(subscription.originalData);
+                const address = getSubscriptionAddress(
+                  subscription.originalData,
+                );
                 return (
                   <TouchableOpacity
                     key={subscription.id}
                     style={[
                       styles.dropdownItem,
-                      selectedSubscription?.id === subscription.id && styles.dropdownItemSelected,
+                      selectedSubscription?.id === subscription.id &&
+                        styles.dropdownItemSelected,
                     ]}
                     onPress={() => {
                       setSelectedSubscription(subscription);
@@ -1702,12 +1851,22 @@ const submitTicket = async () => {
                     }}
                   >
                     <Text style={styles.dropdownItemText}>
-                      {subscription.subscription_id || `Subscription #${subscription.id}`}
+                      {subscription.subscription_id ||
+                        `Subscription #${subscription.id}`}
                     </Text>
-                    <Text style={{ fontSize: 12, color: colors.textLight }} numberOfLines={1}>
+                    <Text
+                      style={{ fontSize: 12, color: colors.textLight }}
+                      numberOfLines={1}
+                    >
                       {address}
                     </Text>
-                    <Text style={{ fontSize: 11, color: colors.textLight, marginTop: 2 }}>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: colors.textLight,
+                        marginTop: 2,
+                      }}
+                    >
                       Status: {subscription.status}
                     </Text>
                   </TouchableOpacity>
@@ -1715,7 +1874,9 @@ const submitTicket = async () => {
               })}
             </ScrollView>
           ) : (
-            <Text style={styles.noSubscriptionsText}>No subscriptions found</Text>
+            <Text style={styles.noSubscriptionsText}>
+              No subscriptions found
+            </Text>
           )}
         </View>
       )}
@@ -1727,8 +1888,18 @@ const submitTicket = async () => {
     const isBot = item.sender === "bot";
 
     return (
-      <View style={[styles.messageWrapper, isBot ? styles.botMessageWrapper : styles.userMessageWrapper]}>
-        <View style={[styles.messageBubble, isBot ? styles.botMessageBubble : styles.userMessageBubble]}>
+      <View
+        style={[
+          styles.messageWrapper,
+          isBot ? styles.botMessageWrapper : styles.userMessageWrapper,
+        ]}
+      >
+        <View
+          style={[
+            styles.messageBubble,
+            isBot ? styles.botMessageBubble : styles.userMessageBubble,
+          ]}
+        >
           <Text style={isBot ? styles.botMessageText : styles.userMessageText}>
             {item.text}
           </Text>
@@ -1747,7 +1918,10 @@ const submitTicket = async () => {
           )}
         </View>
         <Text style={styles.messageTime}>
-          {new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {new Date(item.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
         </Text>
       </View>
     );
@@ -1775,7 +1949,11 @@ const submitTicket = async () => {
       <>
         {isTyping && (
           <View style={styles.typingIndicator}>
-            <Ionicons name="ellipsis-horizontal" size={20} color={colors.primary} />
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={20}
+              color={colors.primary}
+            />
             <View style={styles.typingDots}>
               <View style={styles.typingDot} />
               <View style={styles.typingDot} />
@@ -1786,10 +1964,16 @@ const submitTicket = async () => {
 
         {showYesNoQuestion && !isTyping && (
           <View style={styles.yesNoContainer}>
-            <TouchableOpacity style={styles.yesButton} onPress={() => handleYesNoResponse(true)}>
+            <TouchableOpacity
+              style={styles.yesButton}
+              onPress={() => handleYesNoResponse(true)}
+            >
               <Text style={styles.yesNoButtonText}>Yes</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.noButton} onPress={() => handleYesNoResponse(false)}>
+            <TouchableOpacity
+              style={styles.noButton}
+              onPress={() => handleYesNoResponse(false)}
+            >
               <Text style={styles.yesNoButtonText}>No</Text>
             </TouchableOpacity>
           </View>
@@ -1818,31 +2002,41 @@ const submitTicket = async () => {
           !showRestartOptions &&
           !isTyping && (
             <View style={styles.yesNoContainer}>
-              <TouchableOpacity style={styles.yesButton} onPress={() => handleSlowInternetYesNo(true)}>
+              <TouchableOpacity
+                style={styles.yesButton}
+                onPress={() => handleSlowInternetYesNo(true)}
+              >
                 <Text style={styles.yesNoButtonText}>Yes, but still slow</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.noButton} onPress={() => handleSlowInternetYesNo(false)}>
+              <TouchableOpacity
+                style={styles.noButton}
+                onPress={() => handleSlowInternetYesNo(false)}
+              >
                 <Text style={styles.yesNoButtonText}>No, not yet</Text>
               </TouchableOpacity>
             </View>
           )}
 
-        {!isTyping && !conversationContext && !showYesNoQuestion && !showRestartOptions && !showContactInfo && (
-          <View style={styles.suggestionsContainer}>
-            <Text style={styles.suggestionsTitle}>Quick questions:</Text>
-            <View style={styles.suggestionsGrid}>
-              {initialQuestions.map((question, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.suggestionButton}
-                  onPress={() => handleQuickReply(question)}
-                >
-                  <Text style={styles.suggestionText}>{question}</Text>
-                </TouchableOpacity>
-              ))}
+        {!isTyping &&
+          !conversationContext &&
+          !showYesNoQuestion &&
+          !showRestartOptions &&
+          !showContactInfo && (
+            <View style={styles.suggestionsContainer}>
+              <Text style={styles.suggestionsTitle}>Quick questions:</Text>
+              <View style={styles.suggestionsGrid}>
+                {initialQuestions.map((question, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.suggestionButton}
+                    onPress={() => handleQuickReply(question)}
+                  >
+                    <Text style={styles.suggestionText}>{question}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-          </View>
-        )}
+          )}
 
         {showTicketPrompt && showContactInfo && !isTyping && (
           <View style={styles.suggestionsContainer}>
@@ -1850,22 +2044,37 @@ const submitTicket = async () => {
               style={[styles.suggestionButton, styles.createTicketSuggestion]}
               onPress={openTicketForm}
             >
-              <Text style={[styles.suggestionText, styles.createTicketText]}>🎫 Submit Support Ticket</Text>
+              <Text style={[styles.suggestionText, styles.createTicketText]}>
+                🎫 Submit Support Ticket
+              </Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {(conversationContext === "cant_access_websites" || conversationContext === "change_password") &&
-          !showContactInfo && !isTyping && (
+        {(conversationContext === "cant_access_websites" ||
+          conversationContext === "change_password") &&
+          !showContactInfo &&
+          !isTyping && (
             <View style={styles.suggestionsContainer}>
               <TouchableOpacity
-                style={[styles.suggestionButton, { backgroundColor: colors.primary + "10", borderColor: colors.primary }]}
+                style={[
+                  styles.suggestionButton,
+                  {
+                    backgroundColor: colors.primary + "10",
+                    borderColor: colors.primary,
+                  },
+                ]}
                 onPress={() => {
                   setShowContactInfo(true);
                   setShowTicketPrompt(true);
                 }}
               >
-                <Text style={[styles.suggestionText, { color: colors.primary, fontWeight: "bold" }]}>
+                <Text
+                  style={[
+                    styles.suggestionText,
+                    { color: colors.primary, fontWeight: "bold" },
+                  ]}
+                >
                   Get Contact Information & Create Ticket
                 </Text>
               </TouchableOpacity>
@@ -1881,6 +2090,8 @@ const submitTicket = async () => {
         onPress={() => setModalVisible(true)}
         isVisible={!modalVisible && !ticketModalVisible}
         colors={colors}
+        pan={pan}
+        panHandlers={panResponder.panHandlers}
       />
 
       <Modal
@@ -1891,7 +2102,10 @@ const submitTicket = async () => {
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => setModalVisible(false)}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => setModalVisible(false)}
+            >
               <Ionicons name="arrow-back" size={24} color={colors.text} />
             </TouchableOpacity>
 
@@ -1901,12 +2115,13 @@ const submitTicket = async () => {
               </View>
               <View style={styles.headerInfo}>
                 <Text style={styles.headerTitle}>Kazi Assistant</Text>
-                <Text style={styles.headerSubtitle}>{isTyping ? "Typing..." : "Online"}</Text>
+                <Text style={styles.headerSubtitle}>
+                  {isTyping ? "Typing..." : "Online"}
+                </Text>
               </View>
             </View>
 
             <View style={styles.headerActions}>
-              
               <TouchableOpacity
                 style={styles.headerIconButton}
                 onPress={() => {
@@ -1916,16 +2131,21 @@ const submitTicket = async () => {
                       text: "Clear",
                       style: "destructive",
                       onPress: async () => {
-                        const initialMsg = [{
-                          id: "1",
-                          text: "Hi there! 👋 I'm Kazi Assistant. I'm here to help you with internet issues. How can I assist you today?",
-                          sender: "bot",
-                          timestamp: new Date(),
-                        }];
+                        const initialMsg = [
+                          {
+                            id: "1",
+                            text: "Hi there! 👋 I'm Kazi Assistant. I'm here to help you with internet issues. How can I assist you today?",
+                            sender: "bot",
+                            timestamp: new Date(),
+                          },
+                        ];
                         setMessages(initialMsg);
                         if (user && user.id) {
                           const userMessagesKey = getUserMessagesKey(user.id);
-                          await AsyncStorage.setItem(userMessagesKey, JSON.stringify(initialMsg));
+                          await AsyncStorage.setItem(
+                            userMessagesKey,
+                            JSON.stringify(initialMsg),
+                          );
                         }
                         setConversationContext(null);
                         setShowContactInfo(false);
@@ -1937,7 +2157,11 @@ const submitTicket = async () => {
                   ]);
                 }}
               >
-                <Ionicons name="trash-outline" size={22} color={colors.textLight} />
+                <Ionicons
+                  name="trash-outline"
+                  size={22}
+                  color={colors.textLight}
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -1953,8 +2177,14 @@ const submitTicket = async () => {
             />
           </View>
 
-          {(!conversationContext || (conversationContext === "slow_internet" && !showYesNoQuestion && !showRestartOptions)) && (
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
+          {(!conversationContext ||
+            (conversationContext === "slow_internet" &&
+              !showYesNoQuestion &&
+              !showRestartOptions)) && (
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            >
               <View style={styles.inputContainer}>
                 <View style={styles.inputWrapper}>
                   <TextInput
@@ -1972,7 +2202,12 @@ const submitTicket = async () => {
                   />
                 </View>
                 <TouchableOpacity
-                  style={[styles.sendButton, !inputText.trim() && attachments.length === 0 && styles.sendButtonDisabled]}
+                  style={[
+                    styles.sendButton,
+                    !inputText.trim() &&
+                      attachments.length === 0 &&
+                      styles.sendButtonDisabled,
+                  ]}
                   onPress={() => sendMessage()}
                   disabled={!inputText.trim() && attachments.length === 0}
                 >
@@ -1988,28 +2223,47 @@ const submitTicket = async () => {
         visible={ticketModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => !isSubmittingTicket && setTicketModalVisible(false)}
+        onRequestClose={() =>
+          !isSubmittingTicket && setTicketModalVisible(false)
+        }
       >
         <SafeAreaView style={styles.ticketModal}>
           <View style={styles.ticketHeader}>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => !isSubmittingTicket && setTicketModalVisible(false)}
+              onPress={() =>
+                !isSubmittingTicket && setTicketModalVisible(false)
+              }
               disabled={isSubmittingTicket}
             >
               <Ionicons name="arrow-back" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.ticketTitle}>Submit Support Ticket</Text>
-            <Text style={styles.ticketSubtitle}>Select subscription and describe your issue</Text>
+            <Text style={styles.ticketSubtitle}>
+              Select subscription and describe your issue
+            </Text>
           </View>
 
-          <ScrollView style={styles.ticketForm} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            style={styles.ticketForm}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Select Subscription *</Text>
               {renderSubscriptionDropdown()}
               {subscriptions.length > 0 && selectedSubscription && (
-                <Text style={{ fontSize: 12, color: colors.textLight, marginTop: 8 }}>
-                  Selected: {selectedSubscription.subscription_id || `Subscription #${selectedSubscription.id}`} - {selectedSubscription.plan?.name || "Unknown Plan"}
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: colors.textLight,
+                    marginTop: 8,
+                  }}
+                >
+                  Selected:{" "}
+                  {selectedSubscription.subscription_id ||
+                    `Subscription #${selectedSubscription.id}`}{" "}
+                  - {selectedSubscription.plan?.name || "Unknown Plan"}
                 </Text>
               )}
             </View>
@@ -2030,9 +2284,15 @@ const submitTicket = async () => {
             </View>
 
             <View style={styles.attachmentContainer}>
-              <Text style={styles.attachmentLabel}>Attach Images (Optional)</Text>
+              <Text style={styles.attachmentLabel}>
+                Attach Images (Optional)
+              </Text>
               {ticketAttachments.length === 0 ? (
-                <TouchableOpacity style={styles.attachmentButton} onPress={pickTicketImage} disabled={isSubmittingTicket}>
+                <TouchableOpacity
+                  style={styles.attachmentButton}
+                  onPress={pickTicketImage}
+                  disabled={isSubmittingTicket}
+                >
                   <Ionicons name="image" size={24} color={colors.primary} />
                   <Text style={styles.attachmentButtonText}>Add Image</Text>
                 </TouchableOpacity>
@@ -2042,21 +2302,33 @@ const submitTicket = async () => {
                     <View key={attachment.id} style={styles.selectedAttachment}>
                       <Ionicons name="image" size={24} color={colors.primary} />
                       <View style={styles.selectedAttachmentInfo}>
-                        <Text style={styles.selectedAttachmentName}>{attachment.name}</Text>
+                        <Text style={styles.selectedAttachmentName}>
+                          {attachment.name}
+                        </Text>
                       </View>
                       <TouchableOpacity
                         style={styles.removeAttachmentButton}
                         onPress={() => removeTicketAttachment(attachment.id)}
                         disabled={isSubmittingTicket}
                       >
-                        <Ionicons name="close-circle" size={20} color={colors.danger} />
+                        <Ionicons
+                          name="close-circle"
+                          size={20}
+                          color={colors.danger}
+                        />
                       </TouchableOpacity>
                     </View>
                   ))}
                   {ticketAttachments.length < 5 && (
-                    <TouchableOpacity style={[styles.attachmentButton, { marginTop: 12 }]} onPress={pickTicketImage} disabled={isSubmittingTicket}>
+                    <TouchableOpacity
+                      style={[styles.attachmentButton, { marginTop: 12 }]}
+                      onPress={pickTicketImage}
+                      disabled={isSubmittingTicket}
+                    >
                       <Ionicons name="add" size={24} color={colors.primary} />
-                      <Text style={styles.attachmentButtonText}>Add Another Image</Text>
+                      <Text style={styles.attachmentButtonText}>
+                        Add Another Image
+                      </Text>
                     </TouchableOpacity>
                   )}
                 </>
@@ -2064,22 +2336,45 @@ const submitTicket = async () => {
             </View>
 
             <TouchableOpacity
-              style={[styles.submitTicketButton, (!ticketSubject.trim() || !selectedSubscription || isSubmittingTicket) && styles.submitTicketButtonDisabled]}
+              style={[
+                styles.submitTicketButton,
+                (!ticketSubject.trim() ||
+                  !selectedSubscription ||
+                  isSubmittingTicket) &&
+                  styles.submitTicketButtonDisabled,
+              ]}
               onPress={submitTicket}
-              disabled={!ticketSubject.trim() || !selectedSubscription || isSubmittingTicket}
+              disabled={
+                !ticketSubject.trim() ||
+                !selectedSubscription ||
+                isSubmittingTicket
+              }
             >
               {isSubmittingTicket ? (
                 <ActivityIndicator color={colors.white} />
               ) : (
                 <>
-                  <Ionicons name="checkmark-circle" size={24} color={colors.white} />
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={24}
+                    color={colors.white}
+                  />
                   <Text style={styles.submitTicketText}>Submit Ticket</Text>
                 </>
               )}
             </TouchableOpacity>
 
-            <Text style={{ textAlign: "center", color: colors.textLight, fontSize: 12, marginTop: 20, paddingHorizontal: 20 }}>
-              Our support team will review your ticket and contact you within 24 hours.
+            <Text
+              style={{
+                textAlign: "center",
+                color: colors.textLight,
+                fontSize: 12,
+                marginTop: 20,
+                paddingHorizontal: 20,
+              }}
+            >
+              Our support team will review your ticket and contact you within 24
+              hours.
             </Text>
           </ScrollView>
         </SafeAreaView>

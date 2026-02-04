@@ -8,17 +8,20 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Alert,
   Dimensions,
   Platform,
-  Animated,
   ActivityIndicator,
+  useColorScheme,
+  theme
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -28,7 +31,10 @@ const AccountSettings = () => {
   const user = useUserStore((state) => state.user);
   const loadUser = useUserStore((state) => state.loadUser);
   const setUser = useUserStore((state) => state.setUser);
-  const { theme } = useTheme();
+  const { mode } = useTheme();
+  const systemColorScheme = useColorScheme();
+    // Determine effective mode
+    const effectiveMode = mode === "system" ? systemColorScheme : mode;
 
   // Define colors based on theme
   const COLORS = {
@@ -49,6 +55,11 @@ const AccountSettings = () => {
       text: "#1E293B",
       textLight: "#64748B",
       surface: "#FFFFFF",
+      // Gradient colors for header
+      gradientStart: "#98eced",
+      gradientAlt1: "#65f1e8",
+      gradientEnd: "#21c7c1",
+      gradientAlt: "#1de7e3",
     },
     dark: {
       primary: "#1f6f68",
@@ -67,10 +78,15 @@ const AccountSettings = () => {
       text: "#FFFFFF",
       textLight: "#B0B0B0",
       surface: "#1E1E1E",
+      // Gradient colors for header (darker version)
+      gradientStart: "#000000",
+      gradientEnd: "#032829",
+      gradientAlt: "#0b1515",
+      gradientAlt1: "#032829",
     }
   };
   
-  const colors = theme === "dark" ? COLORS.dark : COLORS.light;
+   const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -83,7 +99,8 @@ const AccountSettings = () => {
     mobile_number: "",
   });
 
-  const scrollY = React.useRef(new Animated.Value(0)).current;
+  // Header states
+  const [activeHeaderTab, setActiveHeaderTab] = useState("Album");
 
   useEffect(() => {
     loadUser();
@@ -102,181 +119,141 @@ const AccountSettings = () => {
     }
   }, [user]);
 
-  const headerHeight = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [height * 0.22, height * 0.15],
-    extrapolate: 'clamp'
-  });
+  // Reset StatusBar when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      StatusBar.setBarStyle('light-content');
+      if (Platform.OS === 'android') {
+        StatusBar.setBackgroundColor('transparent');
+        StatusBar.setTranslucent(true);
+      }
+      
+      return () => {
+        // Optional cleanup
+      };
+    }, [])
+  );
 
-  // UPDATE THIS FUNCTION TO SEND DATA TO BACKEND
- // UPDATE THE handleSave FUNCTION WITH THIS CODE:
+  const handleHeaderTabPress = (tabName) => {
+    setActiveHeaderTab(tabName);
+  };
 
-const handleSave = async () => {
-  // Validate required fields
-  if (!form.name.trim()) {
-    Alert.alert("Validation Error", "Name is required");
-    return;
-  }
-
-  setIsSaving(true);
-  
-  try {
-    // Get authentication token
-    const token = await AsyncStorage.getItem("token");
-    
-    if (!token) {
-      Alert.alert("Error", "Authentication required");
-      router.back();
+  const handleSave = async () => {
+    // Validate required fields
+    if (!form.name.trim()) {
+      Alert.alert("Validation Error", "Name is required");
       return;
     }
 
-    // Prepare data for backend
-    const updateData = {
-      name: form.name.trim(),
-      street: form.street?.trim() || "",
-      barangay: form.barangay?.trim() || "",
-      town: form.town?.trim() || "",
-      province: form.province?.trim() || "",
-      mobile_number: form.mobile_number?.trim() || "",
-    };
-
-    console.log("📤 Sending to backend:", updateData);
-    console.log("🔑 Token length:", token.length);
-
-    // SEND TO BACKEND API
-    const response = await fetch(API_EDIT_PROFILE_URL, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(updateData),
-    });
-
-    console.log("📥 Response status:", response.status);
-    console.log("📥 Response headers:", Object.fromEntries(response.headers.entries()));
-
-    // Try to parse the response text first
-    const responseText = await response.text();
-    console.log("📥 Raw response:", responseText);
-
-    let result;
+    setIsSaving(true);
+    
     try {
-      result = JSON.parse(responseText);
-      console.log("📥 Parsed response:", result);
-    } catch (parseError) {
-      console.error("❌ Failed to parse JSON:", parseError);
-      throw new Error("Server returned invalid JSON response");
-    }
-
-    // Check different response formats
-    if (response.ok) {
-      // Check for different success response formats
-      if (result.success === true || result.status === "success" || result.message?.includes("success")) {
-        // Update local user store with backend response
-        const updatedUser = {
-          ...user,
-          ...updateData,
-        };
-        
-        await setUser(updatedUser);
-        
-        setIsEditing(false);
-        Alert.alert(
-          "Success!",
-          result.message || "Your profile has been updated successfully",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                // Optional: Reload user data from backend
-                loadUser();
-              }
-            }
-          ]
-        );
-        
-        console.log("✅ Profile updated successfully:", result.data || result);
+      // Get authentication token
+      const token = await AsyncStorage.getItem("token");
+      
+      if (!token) {
+        Alert.alert("Error", "Authentication required");
+        router.back();
         return;
       }
+
+      // Prepare data for backend
+      const updateData = {
+        name: form.name.trim(),
+        street: form.street?.trim() || "",
+        barangay: form.barangay?.trim() || "",
+        town: form.town?.trim() || "",
+        province: form.province?.trim() || "",
+        mobile_number: form.mobile_number?.trim() || "",
+      };
+
+      // SEND TO BACKEND API
+      const response = await fetch(API_EDIT_PROFILE_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const responseText = await response.text();
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        throw new Error("Server returned invalid JSON response");
+      }
+
+      // Check different response formats
+      if (response.ok) {
+        if (result.success === true || result.status === "success" || result.message?.includes("success")) {
+          // Update local user store with backend response
+          const updatedUser = {
+            ...user,
+            ...updateData,
+          };
+          
+          await setUser(updatedUser);
+          
+          setIsEditing(false);
+          Alert.alert(
+            "Success!",
+            result.message || "Your profile has been updated successfully",
+            [
+              {
+                text: "OK",
+                onPress: () => {
+                  loadUser();
+                }
+              }
+            ]
+          );
+          return;
+        }
+      }
+
+      // Provide specific error messages based on status code
+      if (response.status === 401) {
+        throw new Error("Session expired. Please login again.");
+      } else if (response.status === 422) {
+        throw new Error("Validation error: " + (result.errors ? Object.values(result.errors).join(", ") : "Invalid data"));
+      } else if (response.status === 400) {
+        throw new Error(result.message || "Bad request. Please check your data.");
+      } else if (response.status === 404) {
+        throw new Error("API endpoint not found. Please contact support.");
+      } else if (response.status === 500) {
+        throw new Error("Server error. Please try again later.");
+      } else {
+        throw new Error(result.message || `Update failed (${response.status})`);
+      }
+
+    } catch (error) {
+      
+      if (error.message === "Network request failed") {
+        Alert.alert(
+          "Network Error",
+          "Please check your internet connection and try again.",
+          [{ text: "OK" }]
+        );
+      } else if (error.message.includes("timeout")) {
+        Alert.alert(
+          "Timeout",
+          "The request took too long. Please try again.",
+          [{ text: "OK" }]
+        );
+      } else {
+        Alert.alert(
+          "Update Failed",
+          error.message || "Could not update profile. Please try again."
+        );
+      }
+    } finally {
+      setIsSaving(false);
     }
-
-    // If we get here, something went wrong
-    console.error("❌ API Error details:", {
-      status: response.status,
-      statusText: response.statusText,
-      result: result
-    });
-
-    // Provide specific error messages based on status code
-    if (response.status === 401) {
-      throw new Error("Session expired. Please login again.");
-    } else if (response.status === 422) {
-      throw new Error("Validation error: " + (result.errors ? Object.values(result.errors).join(", ") : "Invalid data"));
-    } else if (response.status === 400) {
-      throw new Error(result.message || "Bad request. Please check your data.");
-    } else if (response.status === 404) {
-      throw new Error("API endpoint not found. Please contact support.");
-    } else if (response.status === 500) {
-      throw new Error("Server error. Please try again later.");
-    } else {
-      throw new Error(result.message || `Update failed (${response.status})`);
-    }
-
-  } catch (error) {
-    console.error("❌ Error updating profile:", error);
-    
-    // Check for network errors
-    if (error.message === "Network request failed") {
-      Alert.alert(
-        "Network Error",
-        "Please check your internet connection and try again.",
-        [{ text: "OK" }]
-      );
-    } else if (error.message.includes("timeout")) {
-      Alert.alert(
-        "Timeout",
-        "The request took too long. Please try again.",
-        [{ text: "OK" }]
-      );
-    } else {
-      Alert.alert(
-        "Update Failed",
-        error.message || "Could not update profile. Please try again."
-      );
-    }
-  } finally {
-    setIsSaving(false);
-  }
-};
-
-// ALSO ADD THIS DEBUG FUNCTION TO CHECK API CONNECTION:
-const testAPIEndpoint = async () => {
-  try {
-    const token = await AsyncStorage.getItem("token");
-    console.log("🔍 Testing API endpoint:", API_EDIT_PROFILE_URL);
-    console.log("🔍 Token exists:", !!token);
-    
-    // Simple test request
-    const testResponse = await fetch(API_EDIT_PROFILE_URL, {
-      method: "HEAD", // Just check if endpoint exists
-      headers: {
-        "Authorization": `Bearer ${token}`,
-      },
-    });
-    
-    console.log("🔍 Endpoint status:", testResponse.status);
-    console.log("🔍 Endpoint headers:", Object.fromEntries(testResponse.headers.entries()));
-  } catch (error) {
-    console.error("🔍 API test failed:", error);
-  }
-};
-
-// Call this in useEffect to debug
-useEffect(() => {
-  testAPIEndpoint();
-}, []);
+  };
 
   const handleCancel = () => {
     if (user) {
@@ -295,12 +272,33 @@ useEffect(() => {
   if (!user) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
-        <Animated.View style={[styles.headerBackground, { height: headerHeight, backgroundColor: colors.primary }]}>
-          <View style={styles.headerGradient} />
-        </Animated.View>
+        <StatusBar 
+          barStyle="light-content"
+          backgroundColor="transparent"
+          translucent={true}
+        />
+        <LinearGradient
+          colors={[colors.gradientStart, colors.gradientAlt1, colors.gradientAlt, colors.gradientEnd]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.headerGradient}
+        >
+          <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+            <View style={styles.headerTop}>
+              <TouchableOpacity 
+                style={styles.backButton}
+                onPress={() => router.back()}
+              >
+                <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Account Settings</Text>
+              <View style={styles.headerRightPlaceholder} />
+            </View>
+          </SafeAreaView>
+        </LinearGradient>
+        
         <View style={styles.loadingContainer}>
-          <Ionicons name="person-circle-outline" size={60} color={colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textLight }]}>Loading profile...</Text>
         </View>
       </View>
@@ -347,18 +345,28 @@ useEffect(() => {
   );
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar 
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent={true}
+      />
       
-      {/* Animated Header Background */}
-      <Animated.View style={[styles.headerBackground, { height: headerHeight, backgroundColor: colors.primary }]}>
-        <View style={styles.headerGradient}>
+      {/* Gradient Header - This will extend under the status bar */}
+      <LinearGradient
+        colors={[colors.gradientStart,colors.gradientEnd, colors.gradientAlt1, colors.gradientAlt ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.headerGradient}
+      >
+        <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+          {/* Back Button and Title */}
           <View style={styles.headerTop}>
             <TouchableOpacity 
               style={styles.backButton}
               onPress={() => router.back()}
             >
-              <Ionicons name="arrow-back" size={24} color={colors.white} />
+              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Account Settings</Text>
             {isEditing ? (
@@ -373,18 +381,13 @@ useEffect(() => {
               <View style={styles.headerRightPlaceholder} />
             )}
           </View>
-        </View>
-      </Animated.View>
+        </SafeAreaView>
+      </LinearGradient>
 
-      <Animated.ScrollView
+      <ScrollView
         style={[styles.scrollView, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false }
-        )}
-        scrollEventThrottle={16}
       >
         {/* Account Info Card */}
         <View style={[styles.statsCard, { 
@@ -406,6 +409,8 @@ useEffect(() => {
               </Text>
               <Text style={[styles.statLabel, { color: colors.textLight }]}>Account ID</Text>
             </View>
+            <View style={[styles.statDivider]} />
+           
           </View>
         </View>
 
@@ -514,56 +519,41 @@ useEffect(() => {
             Changes will be saved to our servers and reflected across all devices.
           </Text>
         </View>
-
-        {/* Footer Info */}
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textLight }]}>
-            Last updated: {new Date().toLocaleDateString('en-US', { 
-              month: 'short', 
-              day: 'numeric', 
-              year: 'numeric' 
-            })}
-          </Text>
-          <Text style={[styles.footerSubtext, { color: colors.gray }]}>
-            Update your information anytime
-          </Text>
-        </View>
         
         <View style={styles.bottomSpacer} />
-      </Animated.ScrollView>
-    </SafeAreaView>
+      </ScrollView>
+    </View>
   );
 };
 
 export default AccountSettings;
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
   container: {
     flex: 1,
   },
-  headerBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    overflow: 'hidden',
-    zIndex: 1,
-  },
+  // Gradient Header Styles - Extends under status bar
   headerGradient: {
-    flex: 1,
+    paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+    overflow: 'hidden',
+  },
+  headerSafeArea: {
+    paddingTop: Platform.OS === 'ios' ? 50 : 0,
+    paddingBottom: 20,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 50 : StatusBar.currentHeight + 10,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 15,
   },
   backButton: {
     width: 40,
@@ -592,15 +582,78 @@ const styles = StyleSheet.create({
   headerRightPlaceholder: {
     width: 40,
   },
+  userInfoContainer: {
+    marginBottom: 15,
+  },
+  userEmail: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  deviceInfo: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+  },
+  headerTabsContainer: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  headerTab: {
+    marginRight: 25,
+    paddingBottom: 10,
+  },
+  activeHeaderTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#FFFFFF',
+  },
+  headerTabText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 16,
+  },
+  activeHeaderTabText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  cloudBackupContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  cloudBackupTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  cloudBackupSubtitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+  },
+  bottomNavContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+  },
+  bottomNavItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 5,
+  },
+  bottomNavText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+  },
   scrollView: {
     flex: 1,
   },
   contentContainer: {
-    paddingTop: height * 0.22,
+    paddingTop: 20,
     paddingBottom: 40,
+    paddingHorizontal: 16,
   },
   statsCard: {
-    marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 16,
     padding: 16,
@@ -633,7 +686,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   section: {
-    marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 16,
     padding: 20,
@@ -689,7 +741,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actionContainer: {
-    paddingHorizontal: 16,
     paddingVertical: 20,
   },
   editButton: {
@@ -729,7 +780,6 @@ const styles = StyleSheet.create({
   infoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
     marginTop: 8,
     padding: 16,
     borderRadius: 12,
@@ -744,7 +794,6 @@ const styles = StyleSheet.create({
   footer: {
     alignItems: 'center',
     paddingVertical: 24,
-    paddingHorizontal: 16,
     marginTop: 8,
   },
   footerText: {

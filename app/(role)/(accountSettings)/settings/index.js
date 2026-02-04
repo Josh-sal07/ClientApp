@@ -61,7 +61,7 @@ export default function Settings() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <StatusBar 
         barStyle={effectiveMode === 'dark' ? 'light-content' : 'dark-content'} 
         backgroundColor={colors.primary} 
@@ -75,12 +75,12 @@ export default function Settings() {
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <Ionicons name="arrow-back" size={24} color={colors.white} />
+            <Ionicons name="chevron-back" size={24} color={colors.white} />
           </TouchableOpacity>
           
           {/* Center - Title */}
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Theme Settings</Text>
+            <Text style={styles.headerTitle}>App Settings</Text>
             <Text style={styles.headerSubtitle}>Choose your preferred app appearance</Text>
           </View>
           
@@ -250,7 +250,7 @@ export default function Settings() {
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -276,6 +276,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
     marginBottom: 20,
+    paddingTop: 50,
   },
   headerContent: {
     flexDirection: 'row',

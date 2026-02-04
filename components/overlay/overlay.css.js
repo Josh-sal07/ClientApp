@@ -13,8 +13,8 @@ export const styles = StyleSheet.create({
     position: 'absolute',
     bottom: scaleSize(30),
     right: scaleSize(20),
-    width: scaleSize(60),
-    height: scaleSize(60),
+    width: scaleSize(50),
+    height: scaleSize(50),
     borderRadius: scaleSize(30),
     backgroundColor: '#00afa1ff',
     justifyContent: 'center',
@@ -27,18 +27,7 @@ export const styles = StyleSheet.create({
     zIndex: 9999,
   },
   
-  unreadBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: '#ff3b30',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
+
   
   unreadText: {
     color: '#fff',

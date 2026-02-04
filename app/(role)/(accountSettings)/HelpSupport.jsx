@@ -15,18 +15,26 @@ import {
   StatusBar,
   Platform,
   Animated,
+  useColorScheme,
+  theme
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../../theme/ThemeContext";
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width, height } = Dimensions.get('window');
 
 const UserSupport = () => {
   const router = useRouter();
-  const { theme } = useTheme();
+  const { mode } = useTheme();
   const [showFAQModal, setShowFAQModal] = useState(null);
   const [showContactModal, setShowContactModal] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
+  const systemColorScheme = useColorScheme();
+    // Determine effective mode
+  const effectiveMode = mode === "system" ? systemColorScheme : mode;
+
 
   // Define colors based on theme
   const COLORS = {
@@ -47,6 +55,11 @@ const UserSupport = () => {
       text: "#1E293B",
       textLight: "#64748B",
       surface: "#FFFFFF",
+      // Gradient colors for header
+      gradientStart: "#98eced",
+      gradientAlt1: "#65f1e8",
+      gradientEnd: "#21c7c1",
+      gradientAlt: "#1de7e3",
     },
     dark: {
       primary: "#1f6f68",
@@ -65,16 +78,37 @@ const UserSupport = () => {
       text: "#FFFFFF",
       textLight: "#B0B0B0",
       surface: "#1E1E1E",
+      // Gradient colors for header (darker version)
+      gradientStart: "#000000",
+      gradientEnd: "#032829",
+      gradientAlt: "#0b1515",
+      gradientAlt1: "#032829",
     }
   };
   
-  const colors = theme === "dark" ? COLORS.dark : COLORS.light;
+  const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
 
-  const headerHeight = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [height * 0.20, height * 0.12],
-    extrapolate: 'clamp'
-  });
+  // Header states
+  const [activeHeaderTab, setActiveHeaderTab] = useState("Album");
+
+  // Reset StatusBar when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      StatusBar.setBarStyle('light-content');
+      if (Platform.OS === 'android') {
+        StatusBar.setBackgroundColor('transparent');
+        StatusBar.setTranslucent(true);
+      }
+      
+      return () => {
+        // Optional cleanup
+      };
+    }, [])
+  );
+
+  const handleHeaderTabPress = (tabName) => {
+    setActiveHeaderTab(tabName);
+  };
 
   const supportCategories = [
     {
@@ -171,7 +205,7 @@ const UserSupport = () => {
               onPress={() => setShowFAQModal(null)}
               style={styles.modalBackButton}
             >
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.text }]}>FAQ</Text>
             <TouchableOpacity
@@ -202,7 +236,7 @@ const UserSupport = () => {
                 onPress={faqs[showFAQModal]?.action}
               >
                 <Text style={styles.faqActionText}>Go to {faqs[showFAQModal]?.question.includes('Ticket') ? 'Create Ticket' : 'Settings'}</Text>
-                <Ionicons name="arrow-forward" size={16} color={colors.white} />
+                <Ionicons name="chevron-forward" size={16} color={colors.white} />
               </TouchableOpacity>
             )}
           </View>
@@ -271,49 +305,47 @@ const UserSupport = () => {
   );
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar 
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent={true}
+      />
       
-      {/* Fixed Header */}
-      <View style={[styles.fixedHeader, { backgroundColor: colors.primary }]}>
-        <View style={styles.headerTop}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color={colors.white} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Help & Support</Text>
-          <View style={styles.headerRightPlaceholder} />
-        </View>
-      </View>
+      {/* Gradient Header - This will extend under the status bar */}
+      <LinearGradient
+        colors={[colors.gradientStart,  colors.gradientAlt,colors.gradientAlt1, colors.gradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.headerGradient}
+      >
+        <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+          {/* Back Button and Title */}
+          <View style={styles.headerTop}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Help & Support</Text>
+            <View style={styles.headerRightPlaceholder} />
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
 
-      {/* Animated Header Background */}
-      <Animated.View style={[styles.headerBackground, { 
-        height: headerHeight,
-        backgroundColor: colors.primary 
-      }]} />
-
-      <Animated.ScrollView
+      <ScrollView
         style={[styles.scrollView, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false }
-        )}
-        scrollEventThrottle={16}
       >
         {/* Hero Section */}
         <View style={styles.heroSection}>
           <View style={[styles.heroIconContainer, { backgroundColor: colors.primary }]}>
-            <Ionicons name="help-circle" size={32} color={colors.white} />
+            <Ionicons name="help-circle" size={32} color="#FFFFFF" />
           </View>
           <Text style={[styles.heroTitle, { color: colors.text }]}>How can we help you?</Text>
-          <Text style={[styles.heroSubtitle, { 
-            color: colors.primary,
-            backgroundColor: colors.primary + '10'
-          }]}>We're here for you 24/7</Text>
+          
         </View>
 
         {/* Contact Options */}
@@ -417,35 +449,42 @@ const UserSupport = () => {
         </View>
         
         <View style={styles.bottomSpacer} />
-      </Animated.ScrollView>
+      </ScrollView>
 
       {renderFAQModal()}
       {renderContactModal()}
-    </SafeAreaView>
+    </View>
   );
 };
 
 export default UserSupport;
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
   },
-  fixedHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingTop: Platform.OS === 'ios' ? 50 : StatusBar.currentHeight + 10,
-    paddingBottom: 16,
+  // Gradient Header Styles - Extends under status bar
+  headerGradient: {
+    paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+    overflow: 'hidden',
+  },
+  headerSafeArea: {
+    paddingTop: Platform.OS === 'ios' ? 50 : 0,
+    paddingBottom: 20,
     paddingHorizontal: 20,
-    borderBottomColor: 'rgba(255, 255, 255, 0.2)',
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 15,
   },
   backButton: {
     width: 40,
@@ -463,15 +502,76 @@ const styles = StyleSheet.create({
   headerRightPlaceholder: {
     width: 40,
   },
-  headerBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    overflow: 'hidden',
-    zIndex: 1,
+  userInfoContainer: {
+    marginBottom: 15,
+  },
+  userEmail: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  deviceInfo: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+  },
+  headerTabsContainer: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  headerTab: {
+    marginRight: 25,
+    paddingBottom: 10,
+  },
+  activeHeaderTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#FFFFFF',
+  },
+  headerTabText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 16,
+  },
+  activeHeaderTabText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  cloudBackupContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  cloudBackupTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  cloudBackupSubtitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+  },
+  bottomNavContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+  },
+  bottomNavItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 5,
+  },
+  bottomNavText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  contentContainer: {
+    paddingTop: 20,
+    paddingBottom: 40,
+    paddingHorizontal: 16,
   },
   heroSection: {
     alignItems: 'center',
@@ -500,15 +600,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     fontWeight: '500',
   },
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    paddingTop: height * 0.20,
-    paddingBottom: 40,
-  },
   card: {
-    marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 16,
     padding: 20,
@@ -528,6 +620,33 @@ const styles = StyleSheet.create({
   },
   cardSubtitle: {
     fontSize: 13,
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  quickActionCard: {
+    width: '48%',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  quickActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  quickActionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   contactGrid: {
     flexDirection: 'row',
@@ -630,7 +749,6 @@ const styles = StyleSheet.create({
   footer: {
     alignItems: 'center',
     paddingVertical: 24,
-    paddingHorizontal: 20,
     marginTop: 8,
   },
   footerText: {

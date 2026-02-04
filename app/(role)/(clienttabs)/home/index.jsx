@@ -12,11 +12,16 @@ import {
   Text,
   TouchableOpacity,
   View,
+  StatusBar,
+  ActivityIndicator,
+  ImageBackground,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Overlay from "../../../../components/overlay";
 import { useUserStore } from "../../../../store/user";
 import { useTheme } from "../../../../theme/ThemeContext";
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { sharedScrollY } from "../../../../shared/sharedScroll";
 
 const { width } = Dimensions.get("window");
 
@@ -27,10 +32,12 @@ const scaleSize = (size) => {
 };
 
 const Home = () => {
+  // Use the shared scrollY
+  const scrollY = sharedScrollY;
+  
   const [showAmount, setShowAmount] = useState(true);
   const scrollViewRef = useRef(null);
   const router = useRouter();
-  const [scrollY] = useState(new Animated.Value(0));
   const user = useUserStore((state) => state.user);
   const { mode, theme } = useTheme();
   const systemColorScheme = useColorScheme();
@@ -64,13 +71,19 @@ const Home = () => {
       announcementBg: "#FFF5F5",
       announcementBorder: "#FF6B6B",
       billCardBg: "#FFFFFF",
-      heroBg: "transparent",
+      // Gradient colors - Matching Security/About screens
+      gradientStart: "#98eced",
+      gradientAlt1: "#65f1e8",
+      gradientEnd: "#21c7c1",
+      gradientAlt: "#1de7e3",
+      tabBarGradientStart: "#98eced",
+      tabBarGradientEnd: "#21c7c1",
     },
     dark: {
       primary: "#1f6f68",
       secondary: "#00AFA1",
       dark: "#121212",
-      white: "#FFFFFF",
+      white: "#d9f7f6",
       lightGray: "#1E1E1E",
       gray: "#9E9E9E",
       darkGray: "#121212",
@@ -85,7 +98,13 @@ const Home = () => {
       announcementBg: "#2A1A1A",
       announcementBorder: "#FF6B6B",
       billCardBg: "#1E1E1E",
-      heroBg: "transparent",
+      // Gradient colors (darker version)
+      gradientStart: "#000000",
+      gradientEnd: "#032829",
+      gradientAlt: "#0b1515",
+      gradientAlt1: "#032829",
+      tabBarGradientStart: "#000000",
+      tabBarGradientEnd: "#032829",
     },
   };
 
@@ -125,7 +144,6 @@ const Home = () => {
 
       setUpcomingBills(filteredBills);
     } catch (err) {
-      console.error("Fetch upcoming bills error:", err);
       setUpcomingBills([]);
     } finally {
       setLoadingBills(false);
@@ -138,27 +156,82 @@ const Home = () => {
 
     try {
       const token = await AsyncStorage.getItem("token");
-      if (!token) throw new Error("No token found");
+      if (!token) {
+        setUserCredit(0);
+        return;
+      }
 
       const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/user/credit/${user.id}`,
+        `https://staging.kazibufastnet.com/api/app/credit_points`,
         {
+          method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: "application/json",
+            "Content-Type": "application/json",
           },
         },
       );
 
-      const data = await response.json();
-
-      if (data && data.credit !== undefined) {
-        setUserCredit(data.credit);
-      } else if (data && data.data?.credit !== undefined) {
-        setUserCredit(data.data.credit);
+      if (!response.ok) {
+        const errorText = await response.text();
+        setUserCredit(0);
+        return;
       }
+
+      const responseText = await response.text();
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        setUserCredit(0);
+        return;
+      }
+
+      // Helper function to find credit value in nested objects
+      const findCreditValue = (obj) => {
+        if (!obj || typeof obj !== "object") return 0;
+
+        // Check common credit field names
+        const creditFields = [
+          "credits_balance",
+          "credit_points",
+          "credits",
+          "balance",
+          "credit_balance",
+          "points",
+          "credit",
+          "available_credits",
+          "available_balance",
+          "total_credits",
+          "amount",
+        ];
+
+        // Check direct fields first
+        for (const field of creditFields) {
+          if (obj[field] !== undefined && obj[field] !== null) {
+            const value = parseFloat(obj[field]);
+            if (!isNaN(value)) {
+              return value;
+            }
+          }
+        }
+
+        // Check nested objects
+        for (const key in obj) {
+          if (obj[key] && typeof obj[key] === "object") {
+            const nestedValue = findCreditValue(obj[key]);
+            if (nestedValue > 0) return nestedValue;
+          }
+        }
+
+        return 0;
+      };
+
+      const creditValue = findCreditValue(data);
+      setUserCredit(creditValue);
     } catch (err) {
-      console.error("Fetch user credit error:", err);
       setUserCredit(0);
     }
   };
@@ -219,6 +292,12 @@ const Home = () => {
       route: "/(role)/(clienttabs)/tickets",
       color: colors.warning,
     },
+    {
+      title: "plans",
+      icon: require("../../../../assets/icons/ticket.png"),
+      route: "/(role)/(subscriptionPlan)/plan",
+      color: colors.warning,
+    },
   ];
 
   const handleRoutePress = (route) => {
@@ -226,91 +305,127 @@ const Home = () => {
       router.push(route);
     }
   };
+  const getDots = (value) => {
+    const digits = value.toString().length;
+    return "•".repeat(7);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Overlay />
-       {/* Hero Section */}
-        <View style={[styles.heroSection, { backgroundColor: colors.primary }]}>
-          <View style={styles.greetingContainer}>
-            <Text style={[styles.greeting, { color: colors.white }]}>
-              Hi, {user?.name?.split(" ")[0] || "Guest"}! 👋
-            </Text>
-          </View>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent={true}
+      />
 
-          {/* Credit Display */}
-          <View
-            style={[
-              styles.creditContainer,
-              {
-                backgroundColor: colors.white,
-                borderColor: colors.primary + "20",
-              },
-            ]}
-          >
-            <View style={styles.creditLeftSection}>
-              <View
-                style={[
-                  styles.creditIconContainer,
-                  { backgroundColor: colors.primary + "15" },
-                ]}
-              >
-                <Ionicons
-                  name="wallet-outline"
-                  size={scaleSize(24)}
-                  color={colors.primary}
-                />
-              </View>
-              <View style={styles.creditTextSection}>
-                <Text
-                  style={[styles.creditLabel, { color: colors.textLight }]}
-                >
-                  Available Credit
-                </Text>
-                <View style={styles.amountContainer}>
-                  {showAmount ? (
-                    <Text
-                      style={[styles.creditAmount, { color: colors.primary }]}
-                    >
-                      ₱{userCredit.toLocaleString()}
-                    </Text>
-                  ) : (
-                    <View style={styles.hiddenAmount}>
-                      <Text
-                        style={[styles.hiddenText, { color: colors.primary }]}
-                      >
-                        ••••••
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
+   
+
+      {/* Image Background Hero Section */}
+      <ImageBackground
+        source={require("../../../../assets/images/homebg.png")} // Change this path to your image
+        style={styles.heroImageBackground}
+        resizeMode="cover"
+      >
+        {/* Optional overlay to improve text readability */}
+        <View style={styles.imageOverlay}>
+          <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
+            <View style={styles.greetingContainer}>
+              <Text style={[styles.greeting, { color: colors.white }]}>
+                Hi, {user?.name?.split(" ")[0] || "Guest"}! 
+              </Text>
             </View>
 
-            <View style={styles.creditRightSection}>
-              <TouchableOpacity
-                onPress={() => setShowAmount(!showAmount)}
+            {/* Credit Display Card */}
+            <View
+              style={[
+                styles.creditCard,
+                {
+                  backgroundColor: colors.white,
+                  borderColor: colors.primary + "20",
+                },
+              ]}
+            >
+              <View style={styles.creditHeader}>
+                <View style={styles.creditTitleContainer}>
+                  <View
+                    style={[
+                      styles.creditIconContainer,
+                      { backgroundColor: colors.primary + "15" },
+                    ]}
+                  >
+                    <Ionicons
+                      name="wallet-outline"
+                      size={scaleSize(22)}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <View>
+                    <Text
+                      style={[styles.creditLabel, { color: colors.primary }]}
+                    >
+                      Available Credit
+                    </Text>
+                    <View style={styles.amountContainer}>
+                      {showAmount ? (
+                        <Text
+                          style={[styles.creditAmount, { color: colors.primary }]}
+                        >
+                          ₱
+                          {Number(userCredit).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </Text>
+                      ) : (
+                        <View style={styles.hiddenAmount}>
+                          <Text
+                            style={[styles.hiddenText, { color: colors.primary }]}
+                          >
+                            {getDots(userCredit)}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.creditActions}>
+                  <TouchableOpacity
+                    onPress={() => setShowAmount(!showAmount)}
+                    style={[
+                      styles.eyeButton,
+                      {
+                        backgroundColor:
+                          effectiveMode === "dark"
+                            ? colors.white
+                            : colors.lightGray,
+                        borderColor: colors.primary + "30",
+                      },
+                    ]}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={showAmount ? "eye-outline" : "eye-off-outline"}
+                      size={scaleSize(18)}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View
                 style={[
-                  styles.eyeButton,
-                  { 
-                    backgroundColor: effectiveMode === "dark" ? colors.surface : colors.lightGray,
-                    borderColor: colors.primary + "30",
-                  },
+                  styles.divider,
+                  { backgroundColor: colors.primary + "10" },
                 ]}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={showAmount ? "eye-outline" : "eye-off-outline"}
-                  size={scaleSize(20)}
-                  color={colors.primary}
-                />
-              </TouchableOpacity>
+              />
+
               <TouchableOpacity
                 style={[
                   styles.addCreditButton,
                   { backgroundColor: colors.primary },
                 ]}
-                onPress={() => router.push("/(role)/(clienttabs)/add-credit")}
+                onPress={() => router.push("/(role)/(addcredit)/addCredit")}
                 activeOpacity={0.8}
               >
                 <Ionicons
@@ -318,19 +433,27 @@ const Home = () => {
                   size={scaleSize(16)}
                   color="#FFF"
                 />
-                <Text style={styles.addCreditText}>Add</Text>
+                <Text style={styles.addCreditText}>Add Credit</Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={scaleSize(14)}
+                  color="#FFF"
+                  style={styles.addCreditArrow}
+                />
               </TouchableOpacity>
             </View>
-          </View>
+          </SafeAreaView>
         </View>
-      
+      </ImageBackground>
+
       <Animated.ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true },
+          { useNativeDriver: true }
         )}
         scrollEventThrottle={16}
         refreshControl={
@@ -345,11 +468,9 @@ const Home = () => {
           />
         }
       >
-    
-
-        {/* Quick Actions */}
+        {/* Quick Actions Section */}
         <View style={styles.sectionContainer}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          <Text style={[styles.sectionTitle1, { color: colors.text }]}>
             How can we help you today?
           </Text>
 
@@ -367,7 +488,8 @@ const Home = () => {
                     backgroundColor: colors.surface,
                     borderColor: action.color + "20",
                     borderWidth: 1,
-                    shadowColor: effectiveMode === "dark" ? "transparent" : "#000",
+                    shadowColor:
+                      effectiveMode === "dark" ? "transparent" : "#000",
                   },
                 ]}
                 onPress={() => handleRoutePress(action.route)}
@@ -376,12 +498,19 @@ const Home = () => {
                 <View
                   style={[
                     styles.actionIconContainer,
-                    { backgroundColor: action.color },
+                    {
+                      backgroundColor: action.color,
+                      shadowColor:
+                        effectiveMode === "dark" ? "transparent" : action.color,
+                    },
                   ]}
                 >
                   <Image
                     source={action.icon}
-                    style={styles.actionIcon}
+                    style={[
+                      styles.actionIcon,
+                      { tintColor: index === 1 ? colors.white : undefined },
+                    ]}
                     resizeMode="contain"
                   />
                 </View>
@@ -393,15 +522,22 @@ const Home = () => {
           </ScrollView>
         </View>
 
-        {/* Announcements */}
+        {/* Announcements Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <Ionicons
-                name="megaphone-outline"
-                size={scaleSize(20)}
-                color={colors.danger}
-              />
+              <View
+                style={[
+                  styles.sectionIcon,
+                  { backgroundColor: colors.danger + "15" },
+                ]}
+              >
+                <Ionicons
+                  name="megaphone-outline"
+                  size={scaleSize(18)}
+                  color={colors.danger}
+                />
+              </View>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
                 Announcements
               </Text>
@@ -436,7 +572,7 @@ const Home = () => {
             <View style={styles.announcementHeader}>
               <Ionicons
                 name="alert-circle"
-                size={scaleSize(24)}
+                size={scaleSize(20)}
                 color={colors.danger}
               />
               <Text
@@ -473,15 +609,22 @@ const Home = () => {
           </View>
         </View>
 
-        {/* Upcoming Bills */}
+        {/* Upcoming Bills Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <Ionicons
-                name="calendar-outline"
-                size={scaleSize(20)}
-                color={colors.primary}
-              />
+              <View
+                style={[
+                  styles.sectionIcon,
+                  { backgroundColor: colors.primary + "15" },
+                ]}
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={scaleSize(18)}
+                  color={colors.primary}
+                />
+              </View>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
                 Upcoming Bills
               </Text>
@@ -502,13 +645,23 @@ const Home = () => {
           </View>
 
           {loadingBills ? (
-            <Text style={[styles.loadingText, { color: colors.textLight }]}>
-              Loading upcoming bills...
-            </Text>
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[styles.loadingText, { color: colors.textLight }]}>
+                Loading upcoming bills...
+              </Text>
+            </View>
           ) : upcomingBills.length === 0 ? (
-            <Text style={[styles.noBillsText, { color: colors.textLight }]}>
-              No upcoming bills
-            </Text>
+            <View style={styles.noBillsContainer}>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={scaleSize(40)}
+                color={colors.success}
+              />
+              <Text style={[styles.noBillsText, { color: colors.textLight }]}>
+                All bills are paid! 🎉
+              </Text>
+            </View>
           ) : (
             upcomingBills.map((bill) => {
               const statusText = getStatus(bill.due_date);
@@ -520,20 +673,29 @@ const Home = () => {
                   style={[
                     styles.billCard,
                     {
-                      backgroundColor: colors.billCardBg,
-                      borderColor: colors.border,
-                      shadowColor: effectiveMode === "dark" ? "transparent" : "#000",
+                      backgroundColor: colors.surface,
+                      borderColor: colors.primary + "10",
+                      shadowColor:
+                        effectiveMode === "dark" ? "transparent" : "#000",
                     },
                   ]}
                   activeOpacity={0.9}
                 >
                   <View style={styles.billContent}>
                     <View style={styles.billHeader}>
-                      <Text
-                        style={[styles.billDate, { color: colors.textLight }]}
-                      >
-                        {formatDate(bill.due_date)}
-                      </Text>
+                      <View style={styles.billDateContainer}>
+                        <Ionicons
+                          name="calendar-outline"
+                          size={scaleSize(14)}
+                          color={colors.textLight}
+                          style={styles.billDateIcon}
+                        />
+                        <Text
+                          style={[styles.billDate, { color: colors.textLight }]}
+                        >
+                          {formatDate(bill.due_date)}
+                        </Text>
+                      </View>
                       <View
                         style={[
                           styles.statusBadge,
@@ -566,6 +728,11 @@ const Home = () => {
                         ]}
                       >
                         <Text style={styles.payButtonText}>PAY NOW</Text>
+                        <Ionicons
+                          name="arrow-forward"
+                          size={scaleSize(12)}
+                          color="#FFF"
+                        />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -574,6 +741,9 @@ const Home = () => {
             })
           )}
         </View>
+
+        {/* Footer Spacer */}
+        <View style={styles.bottomSpacer} />
       </Animated.ScrollView>
     </View>
   );
@@ -583,65 +753,74 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollView: {
-    flex: 1,
-    marginBottom: 80,
-    marginTop: 20,
-  },
-  contentContainer: {
-    paddingBottom: Platform.OS === "ios" ? 30 : 20,
-  },
-  heroSection: {
-    paddingHorizontal: scaleSize(20),
-    paddingTop: scaleSize(20),
-    paddingBottom: scaleSize(25),
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    shadowColor: '#000',
+  // Image Background Styles
+  heroImageBackground: {
+    paddingTop: Platform.OS === "ios" ? 0 : StatusBar.currentHeight,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 12,
-    elevation: 8,
-    marginBottom:0
+    elevation: 10,
+    minHeight: 250, // Adjust as needed for your image
+  },
+  imageOverlay: {
+    flex: 1,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+  },
+  headerSafeArea: {
+    paddingTop: Platform.OS === "ios" ? 50 : 0,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    flex: 1,
   },
   greetingContainer: {
-    marginBottom: scaleSize(20),
+    marginBottom: 20,
   },
   greeting: {
-    fontSize: scaleSize(32),
-    fontWeight: "800",
-    textShadowColor: 'rgba(0, 0, 0, 0.1)',
+    fontSize: scaleSize(24),
+    fontWeight: "700",
+    bottom:40,
+    right:5,
+    marginBottom: 4,
+    textShadowColor: "rgba(0, 0, 0, 0.3)",
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
   },
-  creditContainer: {
+  welcomeText: {
+    fontSize: scaleSize(15),
+    bottom:50,
+    opacity: 0.9,
+    right:5
+ 
+  },
+  creditCard: {
+    top:10,
+    padding: 20,
+    elevation: 5,
+    borderRadius:10,
+    
+  },
+  creditHeader: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    borderRadius: scaleSize(18),
-    padding: scaleSize(16),
-    borderWidth: 1.5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+    alignItems: "flex-start",
+    marginBottom: 16,
   },
-  creditLeftSection: {
+  creditTitleContainer: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
   },
   creditIconContainer: {
-    width: scaleSize(50),
-    height: scaleSize(50),
-    borderRadius: scaleSize(12),
+    width: scaleSize(44),
+    height: scaleSize(44),
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: scaleSize(14),
-  },
-  creditTextSection: {
-    flex: 1,
+    marginRight: 14,
   },
   creditLabel: {
     fontSize: scaleSize(12),
@@ -654,71 +833,118 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   creditAmount: {
-    fontSize: scaleSize(26),
+    fontSize: scaleSize(16),
     fontWeight: "800",
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     letterSpacing: 0.5,
   },
   hiddenAmount: {
-    paddingVertical: scaleSize(4),
+    paddingVertical: scaleSize(0),
   },
   hiddenText: {
-    fontSize: scaleSize(26),
+    fontSize: scaleSize(24),
     fontWeight: "800",
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     letterSpacing: scaleSize(3),
   },
-  creditRightSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scaleSize(10),
-    marginLeft: scaleSize(10),
+  creditActions: {
+    marginLeft: 10,
   },
   eyeButton: {
-    width: scaleSize(44),
-    height: scaleSize(44),
-    borderRadius: scaleSize(12),
+    width: scaleSize(30),
+    height: scaleSize(30),
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1.5,
   },
+  divider: {
+    height: 1,
+    marginBottom: 16,
+  },
   addCreditButton: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: scaleSize(16),
-    paddingVertical: scaleSize(10),
-    borderRadius: scaleSize(12),
-    gap: scaleSize(6),
-    shadowColor: '#000',
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    minWidth: scaleSize(85),
-    justifyContent: "center",
   },
   addCreditText: {
     fontSize: scaleSize(14),
     fontWeight: "700",
     color: "#FFF",
   },
+  addCreditArrow: {
+    marginLeft: 2,
+  },
+  scrollView: {
+    flex: 1,
+    marginTop: 66,
+  },
+  contentContainer: {
+    paddingBottom: Platform.OS === "ios" ? 100 : 80,
+  },
   sectionContainer: {
-    paddingHorizontal: scaleSize(20),
-    marginBottom: scaleSize(20),
+    
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  sectionIcon: {
+    width: scaleSize(36),
+    height: scaleSize(36),
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
   },
   sectionTitle: {
     fontSize: scaleSize(18),
     fontWeight: "700",
-    marginBottom: scaleSize(16),
+    marginBottom: 10,
+    
+  },
+  sectionTitle1: {
+    fontSize: scaleSize(18),
+    fontWeight: "700",
+    marginBottom: 10,
+    marginTop:10
+    
+  },
+  seeAllButton: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 4,
+  },
+  seeAllText: {
+    fontSize: scaleSize(14),
+    fontWeight: "600",
   },
   quickActionsContainer: {
-    paddingRight: scaleSize(20),
-    gap: scaleSize(10),
+    paddingRight: 20,
+    gap: 12,
   },
   quickActionCard: {
-    width: scaleSize(115),
-    padding: scaleSize(18),
-    borderRadius: scaleSize(16),
+    width: scaleSize(100),
+    padding: 16,
+    borderRadius: 16,
     alignItems: "center",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -726,112 +952,30 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   actionIconContainer: {
-    width: scaleSize(50),
-    height: scaleSize(50),
-    borderRadius: scaleSize(25),
+    width: scaleSize(40),
+    height: scaleSize(40),
+    borderRadius: 25,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: scaleSize(12),
+    marginBottom: 12,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
   },
   actionIcon: {
-    width: scaleSize(24),
-    height: scaleSize(24),
-    tintColor: "#fff",
+    width: scaleSize(20),
+    height: scaleSize(20),
   },
   quickActionText: {
-    fontSize: scaleSize(12),
+    fontSize: scaleSize(8),
     fontWeight: "700",
     textAlign: "center",
     lineHeight: scaleSize(16),
   },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: scaleSize(16),
-  },
-  sectionTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: scaleSize(8),
-  },
-  seeAllButton: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: scaleSize(4),
-  },
-  seeAllText: {
-    fontSize: scaleSize(14),
-    fontWeight: "600",
-  },
-  billCard: {
-    borderRadius: scaleSize(16),
-    marginBottom: scaleSize(12),
-    borderWidth: 1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: "hidden",
-  },
-  billContent: {
-    padding: scaleSize(16),
-  },
-  billHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: scaleSize(8),
-  },
-  billDate: {
-    fontSize: scaleSize(14),
-    fontWeight: "500",
-  },
-  statusBadge: {
-    paddingHorizontal: scaleSize(10),
-    paddingVertical: scaleSize(5),
-    borderRadius: scaleSize(12),
-  },
-  statusTextBadge: {
-    fontSize: scaleSize(12),
-    fontWeight: "600",
-  },
-  billDescription: {
-    fontSize: scaleSize(15),
-    marginBottom: scaleSize(16),
-    lineHeight: scaleSize(22),
-  },
-  billFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  billAmount: {
-    fontSize: scaleSize(20),
-    fontWeight: "700",
-  },
-  payButton: {
-    paddingHorizontal: scaleSize(20),
-    paddingVertical: scaleSize(10),
-    borderRadius: scaleSize(8),
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  payButtonText: {
-    fontSize: scaleSize(14),
-    fontWeight: "600",
-    color: "#fff",
-  },
   announcementCard: {
-    borderRadius: scaleSize(16),
-    padding: scaleSize(20),
+    borderRadius: 16,
+    padding: 20,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -840,8 +984,8 @@ const styles = StyleSheet.create({
   announcementHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: scaleSize(8),
-    marginBottom: scaleSize(12),
+    gap: 8,
+    marginBottom: 12,
   },
   announcementLabel: {
     fontSize: scaleSize(12),
@@ -851,13 +995,13 @@ const styles = StyleSheet.create({
   announcementTitle: {
     fontSize: scaleSize(18),
     fontWeight: "700",
-    marginBottom: scaleSize(8),
+    marginBottom: 8,
     lineHeight: scaleSize(24),
   },
   announcementDescription: {
     fontSize: scaleSize(14),
     lineHeight: scaleSize(20),
-    marginBottom: scaleSize(16),
+    marginBottom: 16,
   },
   announcementFooter: {
     flexDirection: "row",
@@ -871,15 +1015,98 @@ const styles = StyleSheet.create({
     fontSize: scaleSize(14),
     fontWeight: "600",
   },
+  billCard: {
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+    overflow: "hidden",
+  },
+  billContent: {
+    padding: 16,
+  },
+  billHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  billDateContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  billDateIcon: {
+    opacity: 0.7,
+  },
+  billDate: {
+    fontSize: scaleSize(14),
+    fontWeight: "500",
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  statusTextBadge: {
+    fontSize: scaleSize(12),
+    fontWeight: "600",
+  },
+  billDescription: {
+    fontSize: scaleSize(15),
+    marginBottom: 16,
+    lineHeight: scaleSize(22),
+  },
+  billFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  billAmount: {
+    fontSize: scaleSize(20),
+    fontWeight: "700",
+  },
+  payButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  payButtonText: {
+    fontSize: scaleSize(14),
+    fontWeight: "600",
+    color: "#fff",
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    gap: 10,
+  },
   loadingText: {
-    textAlign: "center",
-    marginTop: 20,
     fontSize: scaleSize(14),
   },
+  noBillsContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 30,
+  },
   noBillsText: {
-    textAlign: "center",
-    marginTop: 20,
     fontSize: scaleSize(14),
+    marginTop: 10,
+  },
+  bottomSpacer: {
+    height: 20,
   },
 });
 

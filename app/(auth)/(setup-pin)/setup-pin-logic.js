@@ -6,9 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export default function useSetupPinLogic() {
   const router = useRouter();
   const { phone: paramPhone } = useLocalSearchParams();
-  const [phone, setPhone] = useState("")
-  const formattedPhone = phone;
-
+  const [phone, setPhone] = useState("");
 
   const [pin, setPin] = useState(["", "", "", "", "", ""]);
   const [confirmPin, setConfirmPin] = useState(["", "", "", "", "", ""]);
@@ -21,20 +19,31 @@ export default function useSetupPinLogic() {
 
   useEffect(() => {
     const loadPhone = async () => {
-      if (paramPhone) {
-        setPhone(paramPhone);
-      } else {
-        const savedPhone = await AsyncStorage.getItem("phone");
-        if (savedPhone) {
-          setPhone(savedPhone);
-        } else {
-          Alert.alert("Error", "Phone number not found. Please verify again.");
-          router.replace("/(auth)/(phone-verify)/otp-verify");
+      try {
+        // Priority 1: Phone from params (from OTP verification)
+        if (paramPhone) {
+          setPhone(paramPhone);
+        } 
+        // Priority 2: Phone from storage
+        else {
+          const savedPhone = await AsyncStorage.getItem("phone");
+          if (savedPhone) {
+            setPhone(savedPhone);
+            console.log("Loaded phone from storage:", savedPhone);
+          } else {
+            Alert.alert("Error", "Phone number not found. Please verify again.");
+            router.replace("/(auth)/(phone-verify)/phone-verify");
+          }
         }
+      } catch (error) {
+        console.error("Failed to load phone:", error);
+        Alert.alert("Error", "Failed to load phone number");
+        router.replace("/(auth)/(phone-verify)/phone-verify");
       }
     };
+    
     loadPhone();
-  }, [paramPhone]);
+  }, [paramPhone, router]);
 
   // Handle PIN input change
   const handlePinChange = (index, value, isConfirm = false) => {
@@ -91,7 +100,7 @@ export default function useSetupPinLogic() {
 
       const formattedPhone = phone.startsWith("+")
         ? phone
-        :  phone.replace(/^0/, "");
+        : phone.replace(/^0/, "");
 
       const response = await fetch(
         "https://staging.kazibufastnet.com/api/app/setup_pin",
@@ -117,21 +126,26 @@ export default function useSetupPinLogic() {
         throw new Error(data.message || "Failed to set PIN!");
       }
 
-      // ✅ STORE IN ASYNC STORAGE
+      // ✅ STORE ALL AUTH DATA CONSISTENTLY
       await AsyncStorage.multiSet([
-        ["phone", formattedPhone], 
-        ["pin", pinString],
+        ["phone", formattedPhone],
         ["pin_set", "true"],
+        [`pin_set_${formattedPhone}`, "true"]
       ]);
 
       Alert.alert("Success", "PIN set successfully!", [
         {
           text: "OK",
-          onPress: () =>
+          onPress: () => {
+            // Clear any temp data
+            AsyncStorage.removeItem("temp_phone");
+            
+            // Navigate to login with phone parameter
             router.replace({
               pathname: "/(auth)/(login)/login",
-              params: { phone: formattedPhone },
-            }),
+              params: { phone: formattedPhone }
+            });
+          },
         },
       ]);
     } catch (err) {
@@ -142,6 +156,7 @@ export default function useSetupPinLogic() {
   };
 
   return {
+    phone,
     pin,
     confirmPin,
     loading,

@@ -7,7 +7,6 @@ export default function usePhoneVerifyLogic() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
 
   /* Format while typing */
   const formatPhone = (value) => {
@@ -18,18 +17,28 @@ export default function usePhoneVerifyLogic() {
   };
 
   /* Masked display */
-   const maskPhone = (value) => {
+  const maskPhone = (value) => {
     const c = value.replace(/\D/g, "");
     return c.length === 10 ? `+63${c[0]}******${c.slice(-3)}` : "+63";
   };
 
   const handleSignIn = async () => {
-    if (phoneNumber) {
-      const clean = phoneNumber.replace(/\D/g, "");
-      await AsyncStorage.setItem("phone", clean);
+    // Check if we have an existing phone number
+    const existingPhone = await AsyncStorage.getItem("phone");
+    if (existingPhone) {
+      // Use existing phone for sign in - STILL NEED OTP
+      router.replace({
+        pathname: "/(auth)/(login)/login",
+        params: { 
+          phone: existingPhone,
+          skipPinSetup: true // Skip PIN setup if PIN exists
+        }
+      });
+    } else {
+      // Clear any temp data and go to OTP
+      await AsyncStorage.removeItem("temp_phone");
+      router.replace("/(auth)/(login)/login")
     }
-
-    router.replace("/(auth)/(login)/login");
   };
 
   const handleSendOtp = async () => {
@@ -43,24 +52,15 @@ export default function usePhoneVerifyLogic() {
 
     try {
       setLoading(true);
-       await AsyncStorage.setItem("temp_phone", clean);
+      
+      // Save phone temporarily for OTP verification
+      await AsyncStorage.setItem("temp_phone", clean);
 
-      const storedPhone = await AsyncStorage.getItem("phone");
-      const pinSet = await AsyncStorage.getItem(`pin_set_${clean}`);
+      // Check if this phone has existing PIN setup locally
+      const localPinSet = await AsyncStorage.getItem(`pin_set_${clean}`);
+      const hasLocalPin = localPinSet === "true";
 
-      if (storedPhone === clean && pinSet === "true") {
-        Alert.alert(
-          "OTP Sent",
-          `Verification code sent to ${maskPhone(clean)}`
-        );
-
-        router.replace({
-          pathname: "/(auth)/(otp-verify)/otp-verify",
-          params: { phone: clean, skipPinSetup: true },
-        });
-        return;
-      }
-
+      // Always send OTP, even if phone has PIN
       const res = await fetch(
         "https://staging.kazibufastnet.com/api/app/verify_number",
         {
@@ -77,11 +77,14 @@ export default function usePhoneVerifyLogic() {
       }
 
       Alert.alert("OTP Sent", `Verification code sent to ${maskPhone(clean)}`);
-      await AsyncStorage.setItem("temp_phone", clean);
-
+      
+      // Navigate to OTP verification with skipPinSetup flag if PIN exists
       router.replace({
         pathname: "/(auth)/(otp-verify)/otp-verify",
-        params: { phone: clean },
+        params: { 
+          phone: clean,
+          skipPinSetup: hasLocalPin ? "true" : "false"
+        },
       });
     } catch (e) {
       Alert.alert("Error", e.message || "Something went wrong");

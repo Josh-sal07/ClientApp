@@ -19,22 +19,6 @@ import usePhoneVerifyLogic from "./phone-verify-logic.js";
 export default function PhoneVerifyScreen() {
   const router = useRouter();
 
-  useEffect(() => {
-  const loadPhone = async () => {
-    try {
-      const savedPhone = await AsyncStorage.getItem("phoneNumber");
-      if (savedPhone) {
-        setPhone(savedPhone);
-      }
-    } catch (error) {
-      console.error("Failed to load phone number", error);
-    }
-  };
-
-  loadPhone();
-}, []);
-
-
   const {
     phone,
     setPhone,
@@ -43,6 +27,25 @@ export default function PhoneVerifyScreen() {
     handleSendOtp,
     handleSignIn,
   } = usePhoneVerifyLogic();
+
+  // Load existing phone on mount
+  useEffect(() => {
+    const loadExistingPhone = async () => {
+      try {
+        // Always check the consistent 'phone' key
+        const savedPhone = await AsyncStorage.getItem("phone");
+        if (savedPhone) {
+          setPhone(savedPhone);
+        }
+        
+        // Also clear any temporary data
+        await AsyncStorage.removeItem("temp_phone");
+      } catch (error) {
+      }
+    };
+
+    loadExistingPhone();
+  }, []);
 
   return (
     <KeyboardAvoidingView
@@ -68,6 +71,7 @@ export default function PhoneVerifyScreen() {
               value={formatPhone(phone)}
               onChangeText={(t) => setPhone(t.replace(/\D/g, "").slice(0, 10))}
               maxLength={13}
+              autoFocus={!phone}
             />
           </View>
 
@@ -89,7 +93,8 @@ export default function PhoneVerifyScreen() {
               <Text style={styles.buttonText}>Send Verification Code</Text>
             )}
           </TouchableOpacity>
-          <View>
+          
+          <View style={styles.signInContainer}>
             <Text style={styles.signInText}>
               Already have an account?{" "}
               <Text style={styles.signInLink} onPress={handleSignIn}>
