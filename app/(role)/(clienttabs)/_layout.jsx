@@ -1,6 +1,8 @@
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
+import { usePathname } from "expo-router";
+
 import {
   StyleSheet,
   View,
@@ -26,6 +28,9 @@ export default function ClientTabsLayout() {
   const insets = useSafeAreaInsets();
   const scrollDirection = useRef("up"); // 'up' or 'down'
   const lastScrollY = useRef(0);
+  const scrollIdleTimer = useRef(null);
+  const pathname = usePathname();
+  const isQrScreen = pathname.includes("qrscanner");
 
   // Track if layout is mounted
   const [isMounted, setIsMounted] = useState(false);
@@ -99,64 +104,96 @@ export default function ClientTabsLayout() {
   const tabBarAnim = useRef(new Animated.Value(0)).current;
   const qrButtonAnim = useRef(new Animated.Value(0)).current; // 0 = visible, 1 = hidden
 
- useEffect(() => {
-  const id = scrollY.addListener(({ value }) => {
-    const currentY = value;
+  useEffect(() => {
+  if (pathname.includes("/home")) setCurrentRoute("home");
+  else if (pathname.includes("/subscriptions")) setCurrentRoute("subscriptions");
+  else if (pathname.includes("/tickets")) setCurrentRoute("tickets");
+  else if (pathname.includes("/account")) setCurrentRoute("account");
+}, [pathname]);
 
-    // ✅ RULE 1: ALWAYS SHOW when at top
-    if (currentY <= 0) {
-      Animated.timing(tabBarAnim, {
-        toValue: 0,
-        duration: 120,
-        useNativeDriver: true,
-      }).start();
 
-      Animated.timing(qrButtonAnim, {
-        toValue: 0,
-        duration: 120,
-        useNativeDriver: true,
-      }).start();
+  useEffect(() => {
+    const id = scrollY.addListener(({ value }) => {
+      const currentY = value;
 
-      lastScrollY.current = 0;
-      return;
-    }
+      // 🔁 CLEAR previous idle timer
+      if (scrollIdleTimer.current) {
+        clearTimeout(scrollIdleTimer.current);
+      }
 
-    // ⬇️ scrolling DOWN → hide
-    if (currentY > lastScrollY.current + 1) {
-      Animated.timing(tabBarAnim, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }).start();
+      // ⏱️ START idle timer (3 seconds)
+      scrollIdleTimer.current = setTimeout(() => {
+        Animated.timing(tabBarAnim, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
 
-      Animated.timing(qrButtonAnim, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }).start();
-    }
+        Animated.timing(qrButtonAnim, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
+      }, 1000);
 
-    // ⬆️ scrolling UP → show
-    if (currentY < lastScrollY.current - 1) {
-      Animated.timing(tabBarAnim, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }).start();
+      // ✅ ALWAYS SHOW when at top
+      if (currentY <= 0) {
+        Animated.timing(tabBarAnim, {
+          toValue: 0,
+          duration: 120,
+          useNativeDriver: true,
+        }).start();
 
-      Animated.timing(qrButtonAnim, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }).start();
-    }
+        Animated.timing(qrButtonAnim, {
+          toValue: 0,
+          duration: 120,
+          useNativeDriver: true,
+        }).start();
 
-    lastScrollY.current = currentY;
-  });
+        lastScrollY.current = 0;
+        return;
+      }
 
-  return () => scrollY.removeListener(id);
-}, []);
+      // ⬇️ scrolling DOWN → hide
+      if (currentY > lastScrollY.current + 1) {
+        Animated.timing(tabBarAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
 
+        Animated.timing(qrButtonAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
+      }
+
+      // ⬆️ scrolling UP → show
+      if (currentY < lastScrollY.current - 1) {
+        Animated.timing(tabBarAnim, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
+
+        Animated.timing(qrButtonAnim, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
+      }
+
+      lastScrollY.current = currentY;
+    });
+
+    return () => {
+      if (scrollIdleTimer.current) {
+        clearTimeout(scrollIdleTimer.current);
+      }
+      scrollY.removeListener(id);
+    };
+  }, []);
 
   // Track current route to prevent double navigation
   const [currentRoute, setCurrentRoute] = useState("home");
@@ -176,22 +213,21 @@ export default function ClientTabsLayout() {
   }, []);
 
   // Reset tab bar when switching tabs
-useEffect(() => {
-  resetScrollY();
+  useEffect(() => {
+    resetScrollY();
 
-  Animated.timing(tabBarAnim, {
-    toValue: 0,
-    duration: 120,
-    useNativeDriver: true,
-  }).start();
+    Animated.timing(tabBarAnim, {
+      toValue: 0,
+      duration: 120,
+      useNativeDriver: true,
+    }).start();
 
-  Animated.timing(qrButtonAnim, {
-    toValue: 0,
-    duration: 120,
-    useNativeDriver: true,
-  }).start();
-}, [currentRoute]);
-
+    Animated.timing(qrButtonAnim, {
+      toValue: 0,
+      duration: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [currentRoute]);
 
   // Start loading line animation
   const startLoadingLine = () => {
@@ -275,7 +311,6 @@ useEffect(() => {
     }, 1000);
   };
 
-
   // Custom Tab Label Component
   const CustomTabLabel = ({ children, color, focused }) => {
     return (
@@ -298,7 +333,7 @@ useEffect(() => {
         backgroundColor="transparent"
         translucent={true}
       />
-      <ChatBot/>
+      {!isQrScreen && <ChatBot />}
 
       {/* Loading Line at the very top */}
       {showLoadingLine && (
@@ -405,7 +440,6 @@ useEffect(() => {
             title: "Scan",
             tabBarStyle: { display: "none" },
             tabBarButton: () => null,
-            
           }}
         />
 
@@ -467,47 +501,52 @@ useEffect(() => {
       )}
 
       {/* Floating QR Code Scanner Button */}
-      <Animated.View
-        style={[
-          styles.floatingButtonContainer,
-          {
-            transform: [
-              { scale: floatingButtonAnim },
-              {
-                translateY: qrButtonAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 120], // move down when hidden
-                }),
-              },
-            ],
-            opacity: qrButtonAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [1, 0],
-            }),
-            bottom: insets.bottom + 8,
-          },
-        ]}
-      >
-        <TouchableOpacity
+      {!isQrScreen && (
+        <Animated.View
           style={[
-            styles.floatingButton,
+            styles.floatingButtonContainer,
             {
-              backgroundColor: colors.floatingButton,
-              borderColor: colors.floatingButtonBorder,
+              transform: [
+                { scale: floatingButtonAnim },
+                {
+                  translateY: qrButtonAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 120],
+                  }),
+                },
+              ],
+              opacity: qrButtonAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 0],
+              }),
+              bottom: insets.bottom + 8,
             },
           ]}
-          onPress={handleQrPress}
-          activeOpacity={0.8}
-          disabled={isNavigating}
         >
-          <View style={styles.floatingButtonInner}>
-            <Ionicons name="qr-code" size={20} color="#FFFFFF" />
-          </View>
-        </TouchableOpacity>
-        <Text style={[styles.floatingButtonLabel, { color: colors.textLight }]}>
-          Scan
-        </Text>
-      </Animated.View>
+          <TouchableOpacity
+            style={[
+              styles.floatingButton,
+              {
+                backgroundColor: colors.floatingButton,
+                borderColor: colors.floatingButtonBorder,
+              },
+            ]}
+            onPress={handleQrPress}
+            activeOpacity={0.8}
+            disabled={isNavigating}
+          >
+            <View style={styles.floatingButtonInner}>
+              <Ionicons name="qr-code" size={20} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+
+          <Text
+            style={[styles.floatingButtonLabel, { color: colors.textLight }]}
+          >
+            Scan
+          </Text>
+        </Animated.View>
+      )}
     </View>
   );
 }

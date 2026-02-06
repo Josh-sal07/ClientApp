@@ -611,8 +611,6 @@ const styles = StyleSheet.create({
   header: {
     paddingBottom: 16,
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -846,7 +844,6 @@ const styles = StyleSheet.create({
   // WebView Styles
   webViewContainer: {
     flex: 1,
-    paddingTop:35
   },
   webViewHeader: {
     flexDirection: "row",
@@ -854,7 +851,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 15,
-    paddingTop: Platform.OS === "ios" ? 50 : 15,
+    paddingTop: Platform.OS === "ios" ? 50 : 35,
   },
   closeButton: {
     width: 40,

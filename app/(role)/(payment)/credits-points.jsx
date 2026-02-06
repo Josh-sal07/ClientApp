@@ -1049,12 +1049,6 @@ const getBase64Logo = async () => {
                   setShowReceipt(true);
                 },
               },
-              {
-                text: "Go to Subscriptions",
-                onPress: () => {
-                  router.replace("/(role)/(clienttabs)/subscriptions");
-                },
-              },
             ],
           );
 

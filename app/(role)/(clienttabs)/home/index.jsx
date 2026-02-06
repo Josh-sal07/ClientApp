@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState, useEffect, useRef } from "react";
 import { RefreshControl, useColorScheme } from "react-native";
+import { useFocusEffect } from "expo-router";
+import { useCallback } from "react";
 import {
   Animated,
   Dimensions,
@@ -14,7 +16,6 @@ import {
   View,
   StatusBar,
   ActivityIndicator,
-  ImageBackground,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useUserStore } from "../../../../store/user";
@@ -34,7 +35,7 @@ const scaleSize = (size) => {
 const Home = () => {
   // Use the shared scrollY
   const scrollY = sharedScrollY;
-  
+
   const [showAmount, setShowAmount] = useState(true);
   const scrollViewRef = useRef(null);
   const router = useRouter();
@@ -46,9 +47,45 @@ const Home = () => {
   const [loadingBills, setLoadingBills] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userCredit, setUserCredit] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [announcements, setAnnouncements] = useState([]);
 
   // Determine effective theme mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
+
+  useFocusEffect(
+  useCallback(() => {
+    fetchHomeData(); // this calls /api/app/home
+  }, [])
+);
+
+
+  useEffect(() => {
+    const loadShowAmount = async () => {
+      try {
+        const saved = await AsyncStorage.getItem("showAmount");
+        if (saved !== null) {
+          setShowAmount(JSON.parse(saved));
+        }
+      } catch (e) {
+        console.log("Failed to load showAmount", e);
+      }
+    };
+
+    loadShowAmount();
+  }, []);
+
+  useEffect(() => {
+    const hasUnreadAnnouncement = announcements.some(
+      (ann) => ann.read_at === null
+    );
+    
+    // If there are unread announcements OR unread notifications, show the red dot
+    if (hasUnreadAnnouncement || unreadNotifications > 0) {
+      // You might want to set this state if you have it elsewhere
+      // For now, we'll handle it in the mail icon directly
+    }
+  }, [announcements, unreadNotifications]);
 
   // Define colors based on theme
   const COLORS = {
@@ -110,59 +147,114 @@ const Home = () => {
 
   const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
 
-  const fetchUpcomingBills = async (isRefresh = false) => {
-    if (!user?.id) return;
-
-    try {
-      if (isRefresh) setRefreshing(true);
-      else setLoadingBills(true);
-
-      const token = await AsyncStorage.getItem("token");
-      if (!token) throw new Error("No token found");
-
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/billings/${user.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        },
-      );
-
-      const json = await response.json();
-
-      const bills = Array.isArray(json)
-        ? json
-        : Array.isArray(json?.data)
-          ? json.data
-          : [];
-
-      const filteredBills = bills
-        .filter((bill) => bill?.status?.toLowerCase() === "unpaid")
-        .sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
-
-      setUpcomingBills(filteredBills);
-    } catch (err) {
-      setUpcomingBills([]);
-    } finally {
-      setLoadingBills(false);
-      setRefreshing(false);
+  // Gradient colors for header (bottom to top)
+  const getHeaderGradientColors = () => {
+    if (effectiveMode === "dark") {
+      return [
+        "#121212", // Darker at bottom
+        "#1a4a4b", // Medium
+        "#2d6c6d", // Lighter at top
+      ];
+    } else {
+      return [
+        "#F5F8FA", // Darker at bottom
+        "#21C7B9", // Primary color in middle
+        "#65f1e8", // Lighter at top
+      ];
     }
   };
 
-  const fetchUserCredit = async () => {
-    if (!user?.id) return;
+  // Static promo images from assets
+  const staticPromos = [
+    {
+      id: 1,
+      title: "Fiber Unlimited Plan",
+      description: "Get up to 300Mbps for only ₱1,299/month",
+      image: require("../../../../assets/images/promo1.png"),
+      validUntil: "2024-12-31",
+    },
+    {
+      id: 2,
+      title: "Family Bundle",
+      description: "Internet + Mobile Data + Streaming",
+      image: require("../../../../assets/images/promo2.jpg"),
+      validUntil: "2024-11-30",
+    },
+    {
+      id: 3,
+      title: "Gamer's Special",
+      description: "Low latency fiber for gaming",
+      image: require("../../../../assets/images/promo3.jpg"),
+      validUntil: "2025-01-15",
+    },
+    {
+      id: 4,
+      title: "Work From Home",
+      description: "Reliable connection for remote work",
+      image: require("../../../../assets/images/promo4.png"),
+      validUntil: "2024-10-31",
+    },
+  ];
 
+  // Quick actions with additional items
+  const quickActions = [
+    {
+      title: "Subscriptions",
+      icon: require("../../../../assets/icons/receipt.png"),
+      route: "/(role)/(clienttabs)/subscriptions",
+      color: colors.primary,
+    },
+    {
+      title: "Tickets",
+      icon: require("../../../../assets/icons/ticket.png"),
+      route: "/(role)/(clienttabs)/tickets",
+      color: colors.secondary,
+    },
+    {
+      title: "Promos",
+      icon: require("../../../../assets/icons/call.png"),
+      route: "/(role)/(promos)/promos",
+      color: colors.warning,
+    },
+    // Additional actions that will go to next row
+    {
+      title: "Internet Speed",
+      icon: require("../../../../assets/icons/call.png"),
+      route: "/(role)/(clienttabs)/speedtest",
+      color: "#4CAF50",
+    },
+    {
+      title: "Usage",
+      icon: require("../../../../assets/icons/call.png"),
+      route: "/(role)/(clienttabs)/usage",
+      color: "#9C27B0",
+    },
+    {
+      title: "Support",
+      icon: require("../../../../assets/icons/call.png"),
+      route: "/(role)/(clienttabs)/support",
+      color: "#FF5722",
+    },
+  ];
+
+  // Fetch all data from the single /api/app/home endpoint
+  const fetchHomeData = async (isRefresh = false) => {
     try {
+      if (!isRefresh) {
+        setLoadingBills(true);
+      } else {
+        setRefreshing(true);
+      }
+
       const token = await AsyncStorage.getItem("token");
       if (!token) {
-        setUserCredit(0);
+        console.log("No token found");
         return;
       }
 
+      // Make single API call to /api/app/home
       const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/credit_points`,
+        `https://staging.kazibufastnet.com/api/app/home`,
         {
           method: "GET",
           headers: {
@@ -170,81 +262,168 @@ const Home = () => {
             Accept: "application/json",
             "Content-Type": "application/json",
           },
-        },
+        }
       );
 
       if (!response.ok) {
         const errorText = await response.text();
-        setUserCredit(0);
-        return;
+        console.log("API Error:", errorText);
+        throw new Error(`API Error: ${response.status}`);
       }
 
       const responseText = await response.text();
-
       let data;
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
-        setUserCredit(0);
-        return;
+        console.log("Parse Error:", parseError);
+        throw new Error("Failed to parse API response");
       }
 
-      // Helper function to find credit value in nested objects
-      const findCreditValue = (obj) => {
-        if (!obj || typeof obj !== "object") return 0;
+      console.log("Home API Data:", data);
 
-        // Check common credit field names
-        const creditFields = [
-          "credits_balance",
-          "credit_points",
-          "credits",
-          "balance",
-          "credit_balance",
-          "points",
-          "credit",
-          "available_credits",
-          "available_balance",
-          "total_credits",
-          "amount",
-        ];
+      // Extract notifications count
+      const notificationsCount = data?.notifications || 0;
+      setUnreadNotifications(notificationsCount);
 
-        // Check direct fields first
-        for (const field of creditFields) {
-          if (obj[field] !== undefined && obj[field] !== null) {
-            const value = parseFloat(obj[field]);
-            if (!isNaN(value)) {
-              return value;
-            }
-          }
-        }
+      // Extract credit points from user object
+      const userCreditValue = data?.user?.credit_points || 0;
+      setUserCredit(userCreditValue);
 
-        // Check nested objects
-        for (const key in obj) {
-          if (obj[key] && typeof obj[key] === "object") {
-            const nestedValue = findCreditValue(obj[key]);
-            if (nestedValue > 0) return nestedValue;
-          }
-        }
+      // Extract announcements
+      const announcementsData = Array.isArray(data?.announcement) 
+        ? data.announcement 
+        : [];
+      setAnnouncements(announcementsData);
 
-        return 0;
-      };
+      // Extract and process billings data
+      const billings = Array.isArray(data?.billings) ? data.billings : [];
+      processBillingsData(billings);
 
-      const creditValue = findCreditValue(data);
-      setUserCredit(creditValue);
     } catch (err) {
-      setUserCredit(0);
+      console.error("Error fetching home data:", err);
+      // For demo purposes, show mock data when API fails
+      if (!isRefresh) {
+        showMockData();
+      }
+      setUpcomingBills([]);
+    } finally {
+      setLoadingBills(false);
+      setRefreshing(false);
     }
   };
 
+  // Process billings data from the API
+  const processBillingsData = (billings) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const processedBills = billings
+      .filter((bill) => ["unpaid", "pending", "open"].includes(bill.status?.toLowerCase() || ""))
+      .map((bill) => {
+        const dueDate = new Date(bill.due_date);
+        dueDate.setHours(0, 0, 0, 0);
+
+        const diffDays = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+
+        let status_category = "upcoming";
+        let status_text = `Due in ${diffDays} days`;
+        let priority = 4;
+
+        if (diffDays < 0) {
+          status_category = "overdue";
+          status_text = `Overdue by ${Math.abs(diffDays)} day(s)`;
+          priority = 1;
+        } else if (diffDays === 0) {
+          status_category = "due_today";
+          status_text = "Due today";
+          priority = 2;
+        } else if (diffDays <= 7) {
+          status_category = "due_soon";
+          status_text = `Due in ${diffDays} day(s)`;
+          priority = 3;
+        }
+
+        return {
+          id: bill.id,
+          plan_name: `Plan ${bill.plan_id || "Unknown"}`,
+          due_date: bill.due_date,
+          amount_due: Number(bill.amount_due || bill.balance || 0),
+          status: bill.status?.toLowerCase() || "unpaid",
+          status_category,
+          status_text,
+          priority,
+          reference_number: bill.reference_number,
+          // Include other billing details if needed
+          ...bill
+        };
+      })
+      .sort((a, b) => a.priority - b.priority);
+
+    setUpcomingBills(processedBills);
+  };
+
+  // Mock data for demonstration (remove when API is working)
+  const showMockData = () => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    const mockBills = [
+      {
+        id: 1,
+        plan_name: "Fiber Unlimited 300Mbps",
+        due_date: yesterday.toISOString().split("T")[0],
+        amount_due: 1299.0,
+        status_category: "overdue",
+        status_text: "Overdue by 1 day",
+        priority: 1,
+      },
+      {
+        id: 2,
+        plan_name: "Internet Plan",
+        due_date: today.toISOString().split("T")[0],
+        amount_due: 1599.0,
+        status_category: "due_today",
+        status_text: "Due today",
+        priority: 2,
+      },
+      {
+        id: 3,
+        plan_name: "Family Bundle",
+        due_date: tomorrow.toISOString().split("T")[0],
+        amount_due: 1999.0,
+        status_category: "due_soon",
+        status_text: "Due in 1 day",
+        priority: 3,
+      },
+      {
+        id: 4,
+        plan_name: "Basic Plan",
+        due_date: nextWeek.toISOString().split("T")[0],
+        amount_due: 899.0,
+        status_category: "upcoming",
+        status_text: "Due in 7 days",
+        priority: 4,
+      },
+    ];
+
+    setUpcomingBills(mockBills);
+    setUnreadNotifications(2); // Mock notifications count
+    setUserCredit(182246513487.23); // Mock credit points
+  };
+
   useEffect(() => {
-    fetchUpcomingBills(false);
-    fetchUserCredit();
+    fetchHomeData(false);
   }, [user]);
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     const options = {
-      weekday: "short",
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -252,19 +431,17 @@ const Home = () => {
     return date.toLocaleDateString("en-US", options);
   };
 
-  const getStatus = (dueDate) => {
-    const today = new Date();
-    const due = new Date(dueDate);
-    const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
-    return diffDays > 0
-      ? `Due in ${diffDays} day${diffDays > 1 ? "s" : ""}`
-      : "Due today";
-  };
-
-  const getStatusColor = (statusText) => {
-    if (statusText.includes("Due today")) return colors.danger;
-    if (statusText.includes("Due in")) return colors.warning;
-    return colors.success;
+  const getStatusColor = (statusCategory) => {
+    switch (statusCategory) {
+      case "overdue":
+        return colors.danger;
+      case "due_today":
+        return colors.warning;
+      case "due_soon":
+        return "#FF9800"; // Orange
+      default:
+        return colors.success;
+    }
   };
 
   const headerOpacity = scrollY.interpolate({
@@ -273,42 +450,53 @@ const Home = () => {
     extrapolate: "clamp",
   });
 
-  const quickActions = [
-    {
-      title: "SUBSCRIPTION",
-      icon: require("../../../../assets/icons/receipt.png"),
-      route: "/(role)/(clienttabs)/subscriptions",
-      color: colors.primary,
-    },
-    {
-      title: "ADD MERCHANT",
-      icon: require("../../../../assets/icons/receipt.png"),
-      route: "/(role)/(clienttabs)/subscriptions",
-      color: colors.dark,
-    },
-    {
-      title: "TICKET",
-      icon: require("../../../../assets/icons/ticket.png"),
-      route: "/(role)/(clienttabs)/tickets",
-      color: colors.warning,
-    },
-    {
-      title: "plans",
-      icon: require("../../../../assets/icons/ticket.png"),
-      route: "/(role)/(subscriptionPlan)/plan",
-      color: colors.warning,
-    },
-  ];
-
   const handleRoutePress = (route) => {
     if (typeof route === "string") {
       router.push(route);
     }
   };
+
   const getDots = (value) => {
-    const digits = value.toString().length;
-    return "•".repeat(7);
+    return "••••••••";
   };
+
+  const formatCurrency = (amount) => {
+    if (!amount && amount !== 0) return "₱0.00";
+    return `₱${Number(amount).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
+  // Helper to chunk quick actions into rows of 3
+  const chunkArray = (arr, size) => {
+    const chunked = [];
+    for (let i = 0; i < arr.length; i += size) {
+      chunked.push(arr.slice(i, i + size));
+    }
+    return chunked;
+  };
+
+  const quickActionRows = chunkArray(quickActions, 3);
+
+  const toggleShowAmount = async () => {
+    const newValue = !showAmount;
+    setShowAmount(newValue);
+
+    try {
+      await AsyncStorage.setItem("showAmount", JSON.stringify(newValue));
+    } catch (e) {
+      console.log("Failed to save showAmount", e);
+    }
+  };
+
+  const PROMO_CARD_WIDTH = 280 + 12; // card width + marginRight
+  const [promoIndex, setPromoIndex] = useState(0);
+
+  // Check if there are unread announcements
+  const hasUnreadAnnouncements = announcements.some(
+    (ann) => ann.read_at === null
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -318,107 +506,66 @@ const Home = () => {
         translucent={true}
       />
 
-   
-
-      {/* Image Background Hero Section */}
-      <ImageBackground
-        source={require("../../../../assets/images/homebg.png")} // Change this path to your image
-        style={styles.heroImageBackground}
-        resizeMode="cover"
-      >
-        {/* Optional overlay to improve text readability */}
-        <View style={styles.imageOverlay}>
-          <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
-            <View style={styles.greetingContainer}>
-              <Text style={[styles.greeting, { color: colors.white }]}>
-                Hi, {user?.name?.split(" ")[0] || "Guest"}! 
-              </Text>
-            </View>
-
-            {/* Credit Display Card */}
-            <View
-              style={[
-                styles.creditCard,
-                {
-                  backgroundColor: colors.white,
-                  borderColor: colors.primary + "20",
-                },
-              ]}
-            >
-              <View style={styles.creditHeader}>
-                <View style={styles.creditTitleContainer}>
-                  <View
-                    style={[
-                      styles.creditIconContainer,
-                      { backgroundColor: colors.primary + "15" },
-                    ]}
-                  >
-                    <Ionicons
-                      name="wallet-outline"
-                      size={scaleSize(22)}
-                      color={colors.primary}
-                    />
-                  </View>
-                  <View>
-                    <Text
-                      style={[styles.creditLabel, { color: colors.primary }]}
-                    >
-                      Available Credit
-                    </Text>
-                    <View style={styles.amountContainer}>
-                      {showAmount ? (
-                        <Text
-                          style={[styles.creditAmount, { color: colors.primary }]}
-                        >
-                          ₱
-                          {Number(userCredit).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+      {/* Header with Gradient Background (Bottom to Top) */}
+      <View style={styles.headerContainer}>
+        <LinearGradient
+          colors={getHeaderGradientColors()}
+          start={{ x: 0.5, y: 1 }} // Start at bottom
+          end={{ x: 0.5, y: 0 }} // End at top
+          style={styles.headerGradient}
+        >
+          <SafeAreaView style={styles.header}>
+            <View style={styles.headerContent}>
+              <View style={styles.separate}>
+                <Text style={styles.welcomeText}>
+                  Hi {user?.name?.split(" ")[0]?.toUpperCase() || "GUEST"},
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    router.push("/(role)/(notifications)");
+                  }}
+                  style={{ position: "relative" }}
+                >
+                  <View style={styles.notificationIconContainer}>
+                    <Ionicons name="mail-outline" size={30} color="#fff" />
+                    
+                    {/* Show red dot if there are unread notifications OR unread announcements */}
+                    {(unreadNotifications > 0 || hasUnreadAnnouncements) && (
+                      <View style={styles.redDot}>
+                        <Text style={styles.redDotText}>
+                          {unreadNotifications > 0 ? unreadNotifications : ""}
                         </Text>
-                      ) : (
-                        <View style={styles.hiddenAmount}>
-                          <Text
-                            style={[styles.hiddenText, { color: colors.primary }]}
-                          >
-                            {getDots(userCredit)}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
+                      </View>
+                    )}
                   </View>
-                </View>
-
-                <View style={styles.creditActions}>
-                  <TouchableOpacity
-                    onPress={() => setShowAmount(!showAmount)}
-                    style={[
-                      styles.eyeButton,
-                      {
-                        backgroundColor:
-                          effectiveMode === "dark"
-                            ? colors.white
-                            : colors.lightGray,
-                        borderColor: colors.primary + "30",
-                      },
-                    ]}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={showAmount ? "eye-outline" : "eye-off-outline"}
-                      size={scaleSize(18)}
-                      color={colors.primary}
-                    />
-                  </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               </View>
-
-              <View
-                style={[
-                  styles.divider,
-                  { backgroundColor: colors.primary + "10" },
-                ]}
-              />
+              <View style={styles.creditHeader}>
+                <Text style={[styles.creditLabel, { color: colors.white }]}>
+                  CREDIT BALANCE
+                </Text>
+                <TouchableOpacity
+                  onPress={toggleShowAmount}
+                  style={styles.eyeButton}
+                >
+                  <Ionicons
+                    name={showAmount ? "eye-outline" : "eye-off-outline"}
+                    size={20}
+                    color={colors.white}
+                  />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.creditAmountContainer}>
+                {showAmount ? (
+                  <Text style={[styles.creditAmount, { color: colors.white }]}>
+                    {formatCurrency(userCredit)}
+                  </Text>
+                ) : (
+                  <Text style={[styles.hiddenAmount, { color: colors.white }]}>
+                    {getDots(userCredit)}
+                  </Text>
+                )}
+              </View>
 
               <TouchableOpacity
                 style={[
@@ -426,222 +573,188 @@ const Home = () => {
                   { backgroundColor: colors.primary },
                 ]}
                 onPress={() => router.push("/(role)/(addcredit)/addCredit")}
-                activeOpacity={0.8}
               >
-                <Ionicons
-                  name="add-circle-outline"
-                  size={scaleSize(16)}
-                  color="#FFF"
-                />
+                <Ionicons name="add-circle" size={20} color="#FFF" />
                 <Text style={styles.addCreditText}>Add Credit</Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={scaleSize(14)}
-                  color="#FFF"
-                  style={styles.addCreditArrow}
-                />
               </TouchableOpacity>
             </View>
           </SafeAreaView>
-        </View>
-      </ImageBackground>
+        </LinearGradient>
+      </View>
 
+      {/* Main Content */}
       <Animated.ScrollView
         ref={scrollViewRef}
         style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
-        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
-              fetchUpcomingBills(true);
-              fetchUserCredit();
+              fetchHomeData(true);
             }}
             colors={[colors.primary]}
             tintColor={colors.primary}
           />
         }
       >
-        {/* Quick Actions Section */}
+        {/* How can we help you today? Section */}
         <View style={styles.sectionContainer}>
-          <Text style={[styles.sectionTitle1, { color: colors.text }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
             How can we help you today?
           </Text>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.quickActionsContainer}
-          >
-            {quickActions.map((action, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.quickActionCard,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: action.color + "20",
-                    borderWidth: 1,
-                    shadowColor:
-                      effectiveMode === "dark" ? "transparent" : "#000",
-                  },
-                ]}
-                onPress={() => handleRoutePress(action.route)}
-                activeOpacity={0.8}
-              >
-                <View
-                  style={[
-                    styles.actionIconContainer,
-                    {
-                      backgroundColor: action.color,
-                      shadowColor:
-                        effectiveMode === "dark" ? "transparent" : action.color,
-                    },
-                  ]}
-                >
-                  <Image
-                    source={action.icon}
-                    style={[
-                      styles.actionIcon,
-                      { tintColor: index === 1 ? colors.white : undefined },
-                    ]}
-                    resizeMode="contain"
-                  />
-                </View>
-                <Text style={[styles.quickActionText, { color: colors.text }]}>
-                  {action.title}
-                </Text>
-              </TouchableOpacity>
+          {/* Quick Actions Grid with rows of 3 */}
+          <View style={styles.quickActionsContainer}>
+            {quickActionRows.map((row, rowIndex) => (
+              <View key={rowIndex} style={styles.quickActionsRow}>
+                {row.map((action, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.quickActionCard}
+                    onPress={() => handleRoutePress(action.route)}
+                  >
+                    <View
+                      style={[
+                        styles.actionIconContainer,
+                        { backgroundColor: action.color + "20" },
+                      ]}
+                    >
+                      <Image
+                        source={action.icon}
+                        style={styles.actionIcon}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={[styles.actionTitle, { color: colors.text }]}>
+                      {action.title}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {/* Fill empty spaces in last row if needed */}
+                {rowIndex === quickActionRows.length - 1 &&
+                  row.length < 3 &&
+                  Array.from({ length: 3 - row.length }).map((_, i) => (
+                    <View key={`empty-${i}`} style={styles.emptyActionCard} />
+                  ))}
+              </View>
             ))}
-          </ScrollView>
-        </View>
-
-        {/* Announcements Section */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <View
-                style={[
-                  styles.sectionIcon,
-                  { backgroundColor: colors.danger + "15" },
-                ]}
-              >
-                <Ionicons
-                  name="megaphone-outline"
-                  size={scaleSize(18)}
-                  color={colors.danger}
-                />
-              </View>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                Announcements
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.seeAllButton}
-              onPress={() =>
-                router.push("/UserAnnouncement/seeAllAnnouncements")
-              }
-            >
-              <Text style={[styles.seeAllText, { color: colors.danger }]}>
-                See all
-              </Text>
-              <Ionicons
-                name="chevron-forward"
-                size={scaleSize(16)}
-                color={colors.danger}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View
-            style={[
-              styles.announcementCard,
-              {
-                backgroundColor: colors.announcementBg,
-                borderLeftColor: colors.announcementBorder,
-                borderLeftWidth: scaleSize(4),
-              },
-            ]}
-          >
-            <View style={styles.announcementHeader}>
-              <Ionicons
-                name="alert-circle"
-                size={scaleSize(20)}
-                color={colors.danger}
-              />
-              <Text
-                style={[styles.announcementLabel, { color: colors.danger }]}
-              >
-                IMPORTANT
-              </Text>
-            </View>
-            <Text style={[styles.announcementTitle, { color: colors.text }]}>
-              Christmas Party Cancellation Notice
-            </Text>
-            <Text
-              style={[
-                styles.announcementDescription,
-                { color: colors.textLight },
-              ]}
-            >
-              Due to unfavorable weather conditions, our annual Christmas party
-              has been postponed. Stay tuned for further updates and new date
-              announcements.
-            </Text>
-            <View style={styles.announcementFooter}>
-              <Text
-                style={[styles.announcementDate, { color: colors.textLight }]}
-              >
-                Posted: Dec 10, 2025
-              </Text>
-              <TouchableOpacity>
-                <Text style={[styles.readMoreText, { color: colors.danger }]}>
-                  Read more →
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
 
-        {/* Upcoming Bills Section */}
+        {/* Promos Section with Static Images */}
         <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <View
-                style={[
-                  styles.sectionIcon,
-                  { backgroundColor: colors.primary + "15" },
-                ]}
-              >
-                <Ionicons
-                  name="calendar-outline"
-                  size={scaleSize(18)}
-                  color={colors.primary}
-                />
-              </View>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                Upcoming Bills
-              </Text>
-            </View>
+          <View style={styles.promosHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Promos
+            </Text>
             <TouchableOpacity
-              style={styles.seeAllButton}
-              onPress={() => router.push("/(role)/(clienttabs)/billing")}
+              onPress={() => router.push("/(role)/(clienttabs)/home")}
             >
               <Text style={[styles.seeAllText, { color: colors.primary }]}>
                 See all
               </Text>
-              <Ionicons
-                name="chevron-forward"
-                size={scaleSize(16)}
-                color={colors.primary}
-              />
             </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.promosScroll}
+            snapToInterval={PROMO_CARD_WIDTH}
+            decelerationRate="fast"
+            onScroll={(e) => {
+              const index = Math.round(
+                e.nativeEvent.contentOffset.x / PROMO_CARD_WIDTH,
+              );
+              setPromoIndex(index);
+            }}
+            scrollEventThrottle={16}
+          >
+            {staticPromos.map((promo) => (
+              <TouchableOpacity
+                key={promo.id}
+                style={[styles.promoCard, { backgroundColor: colors.surface }]}
+                onPress={() =>
+                  router.push(`/(role)/(promos)/promo-details?id=${promo.id}`)
+                }
+              >
+                <Image
+                  source={promo.image}
+                  style={styles.promoImage}
+                  resizeMode="cover"
+                />
+                <View style={styles.promoInfo}>
+                  <Text style={[styles.promoTitle, { color: colors.text }]}>
+                    {promo.title}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.promoDescription,
+                      { color: colors.textLight },
+                    ]}
+                  >
+                    {promo.description}
+                  </Text>
+                  <Text style={[styles.promoValid, { color: colors.primary }]}>
+                    Valid until {formatDate(promo.validUntil)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* dots */}
+          <View style={styles.paginationContainer}>
+            {staticPromos.map((_, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.paginationDot,
+                  {
+                    backgroundColor:
+                      promoIndex === index
+                        ? colors.primary
+                        : colors.textLight + "40",
+                    width: promoIndex === index ? 20 : 8,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+
+          {staticPromos.length === 0 && (
+            <View
+              style={[styles.noPromosCard, { backgroundColor: colors.surface }]}
+            >
+              <Ionicons
+                name="megaphone-outline"
+                size={40}
+                color={colors.gray}
+              />
+              <Text style={[styles.noPromosText, { color: colors.textLight }]}>
+                No promos available right now.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Upcoming Bills Section with Categorized Status */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.billsHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Upcoming Bills
+            </Text>
+            {upcomingBills.length > 0 && (
+              <TouchableOpacity
+                onPress={() => router.push("/(role)/(clienttabs)/billing")}
+              >
+                <Text style={[styles.seeAllText, { color: colors.primary }]}>
+                  See all
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {loadingBills ? (
@@ -652,93 +765,156 @@ const Home = () => {
               </Text>
             </View>
           ) : upcomingBills.length === 0 ? (
-            <View style={styles.noBillsContainer}>
+            <View
+              style={[styles.noBillsCard, { backgroundColor: colors.surface }]}
+            >
               <Ionicons
                 name="checkmark-circle-outline"
-                size={scaleSize(40)}
+                size={40}
                 color={colors.success}
               />
               <Text style={[styles.noBillsText, { color: colors.textLight }]}>
-                All bills are paid! 🎉
+                No upcoming bills! 🎉
               </Text>
             </View>
           ) : (
-            upcomingBills.map((bill) => {
-              const statusText = getStatus(bill.due_date);
-              const statusColor = getStatusColor(statusText);
+            <View>
+              {/* Show categorized bills with status headers */}
+              {["overdue", "due_today", "due_soon", "upcoming"].map(
+                (category) => {
+                  const categoryBills = upcomingBills.filter(
+                    (bill) => bill.status_category === category,
+                  );
 
-              return (
-                <TouchableOpacity
-                  key={bill.id}
-                  style={[
-                    styles.billCard,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.primary + "10",
-                      shadowColor:
-                        effectiveMode === "dark" ? "transparent" : "#000",
-                    },
-                  ]}
-                  activeOpacity={0.9}
-                >
-                  <View style={styles.billContent}>
-                    <View style={styles.billHeader}>
-                      <View style={styles.billDateContainer}>
-                        <Ionicons
-                          name="calendar-outline"
-                          size={scaleSize(14)}
-                          color={colors.textLight}
-                          style={styles.billDateIcon}
-                        />
-                        <Text
-                          style={[styles.billDate, { color: colors.textLight }]}
-                        >
-                          {formatDate(bill.due_date)}
-                        </Text>
-                      </View>
-                      <View
+                  if (categoryBills.length === 0) return null;
+
+                  const categoryTitles = {
+                    overdue: "Overdue Bills",
+                    due_today: "Due Today",
+                    due_soon: "Due Soon (Next 7 Days)",
+                    upcoming: "Upcoming Bills",
+                  };
+
+                  return (
+                    <View key={category}>
+                      <Text
                         style={[
-                          styles.statusBadge,
-                          { backgroundColor: statusColor + "15" },
+                          styles.categoryTitle,
+                          {
+                            color: getStatusColor(category),
+                            backgroundColor: getStatusColor(category) + "20",
+                            borderColor: getStatusColor(category) + "40",
+                          },
                         ]}
                       >
-                        <Text
-                          style={[
-                            styles.statusTextBadge,
-                            { color: statusColor },
-                          ]}
-                        >
-                          {statusText}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text
-                      style={[styles.billDescription, { color: colors.text }]}
-                    >
-                      Internet Bill Payment
-                    </Text>
-                    <View style={styles.billFooter}>
-                      <Text style={[styles.billAmount, { color: colors.text }]}>
-                        ₱{bill.amount_due?.toLocaleString() || "0"}
+                        {categoryTitles[category]} ({categoryBills.length})
                       </Text>
-                      <TouchableOpacity
-                        style={[
-                          styles.payButton,
-                          { backgroundColor: colors.primary },
-                        ]}
-                      >
-                        <Text style={styles.payButtonText}>PAY NOW</Text>
-                        <Ionicons
-                          name="arrow-forward"
-                          size={scaleSize(12)}
-                          color="#FFF"
-                        />
-                      </TouchableOpacity>
+
+                      {categoryBills.slice(0, 3).map((bill) => {
+                        const statusColor = getStatusColor(
+                          bill.status_category,
+                        );
+
+                        return (
+                          <TouchableOpacity
+                            key={bill.id}
+                            activeOpacity={0.85}
+                            onPress={() =>
+                              router.push("/(role)/(clienttabs)/subscriptions")
+                            }
+                          >
+                            <View
+                              style={[
+                                styles.billCard,
+                                {
+                                  backgroundColor: colors.surface,
+                                  borderLeftWidth: 4,
+                                  borderLeftColor: statusColor,
+                                },
+                              ]}
+                            >
+                              <View style={styles.billInfo}>
+                                <View style={styles.billDetails}>
+                                  <Text
+                                    style={[
+                                      styles.billTitle,
+                                      { color: colors.text },
+                                    ]}
+                                  >
+                                    {bill.plan_name || "Internet Bill"}
+                                  </Text>
+                                  <Text
+                                    style={[
+                                      styles.billDate,
+                                      { color: colors.textLight },
+                                    ]}
+                                  >
+                                    Due: {formatDate(bill.due_date)}
+                                    {bill.reference_number && ` • Ref: ${bill.reference_number}`}
+                                  </Text>
+                                </View>
+
+                                <View style={styles.billRight}>
+                                  <Text
+                                    style={[
+                                      styles.billAmount,
+                                      { color: colors.text },
+                                    ]}
+                                  >
+                                    ₱
+                                    {bill.amount_due?.toLocaleString(
+                                      undefined,
+                                      {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      },
+                                    ) || "0.00"}
+                                  </Text>
+                                  <Text
+                                    style={[
+                                      styles.billStatus,
+                                      { color: statusColor },
+                                    ]}
+                                  >
+                                    {bill.status_text}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* PAY NOW BUTTON (separate press) */}
+                              <TouchableOpacity
+                                activeOpacity={0.9}
+                                style={[
+                                  styles.payNowButton,
+                                  {
+                                    backgroundColor:
+                                      bill.status_category === "overdue"
+                                        ? colors.danger
+                                        : colors.primary,
+                                  },
+                                ]}
+                                onPress={(e) => {
+                                  e.stopPropagation(); // 🔥 VERY IMPORTANT
+                                  router.push(
+                                    "/(role)/(clienttabs)/subscriptions",
+                                  );
+                                }}
+                              >
+                                <Text style={styles.payNowText}>
+                                  {bill.status_category === "overdue"
+                                    ? "PAY OVERDUE"
+                                    : "PAY NOW"}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
+                  );
+                },
+              )}
+            </View>
           )}
         </View>
 
@@ -750,342 +926,304 @@ const Home = () => {
 };
 
 const styles = StyleSheet.create({
+  paginationContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 12,
+    gap: 8,
+  },
+  paginationDot: {
+    height: 8,
+    borderRadius: 4,
+  },
   container: {
     flex: 1,
   },
-  // Image Background Styles
-  heroImageBackground: {
-    paddingTop: Platform.OS === "ios" ? 0 : StatusBar.currentHeight,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 10,
-    minHeight: 250, // Adjust as needed for your image
-  },
-  imageOverlay: {
-    flex: 1,
+  // Header Container with Gradient
+  headerContainer: {
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
-  headerSafeArea: {
-    paddingTop: Platform.OS === "ios" ? 50 : 0,
-    paddingBottom: 20,
+  headerGradient: {
+    width: "100%",
+    paddingBottom: 50,
+  },
+  header: {},
+  headerContent: {
     paddingHorizontal: 20,
-    flex: 1,
-  },
-  greetingContainer: {
-    marginBottom: 20,
-  },
-  greeting: {
-    fontSize: scaleSize(24),
-    fontWeight: "700",
-    bottom:40,
-    right:5,
-    marginBottom: 4,
-    textShadowColor: "rgba(0, 0, 0, 0.3)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   welcomeText: {
-    fontSize: scaleSize(15),
-    bottom:50,
-    opacity: 0.9,
-    right:5
- 
+    top: 10,
+    fontSize: 18,
+    color: "#FFFFFF",
+    fontWeight: "800",
+    marginBottom: 20,
   },
-  creditCard: {
-    top:10,
-    padding: 20,
-    elevation: 5,
-    borderRadius:10,
-    
+  // Scroll View
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingTop: 10,
+    paddingBottom: 40,
   },
   creditHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  creditTitleContainer: {
-    flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-  },
-  creditIconContainer: {
-    width: scaleSize(44),
-    height: scaleSize(44),
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 14,
+    marginBottom: 12,
   },
   creditLabel: {
-    fontSize: scaleSize(12),
+    fontSize: 12,
     fontWeight: "600",
-    marginBottom: scaleSize(4),
     letterSpacing: 0.5,
-  },
-  amountContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  creditAmount: {
-    fontSize: scaleSize(16),
-    fontWeight: "800",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    letterSpacing: 0.5,
-  },
-  hiddenAmount: {
-    paddingVertical: scaleSize(0),
-  },
-  hiddenText: {
-    fontSize: scaleSize(24),
-    fontWeight: "800",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    letterSpacing: scaleSize(3),
-  },
-  creditActions: {
-    marginLeft: 10,
+    top: 30,
   },
   eyeButton: {
-    width: scaleSize(30),
-    height: scaleSize(30),
-    borderRadius: 12,
+    padding: 4,
+    left: 20,
+    top: 30,
+  },
+  creditAmountContainer: {
+    marginBottom: 16,
+  },
+  creditAmount: {
+    fontSize: 20,
+    fontWeight: "700",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    top: 20,
+  },
+  // Notification Icon with red dot
+  notificationIconContainer: {
+    position: "relative",
+    top: 10,
+  },
+  redDot: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    backgroundColor: "#FF3B30",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1.5,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
-  divider: {
-    height: 1,
-    marginBottom: 16,
+  redDotText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+  hiddenAmount: {
+    fontSize: 20,
+    fontWeight: "700",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    letterSpacing: 4,
+    top: 20,
   },
   addCreditButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 8,
     gap: 8,
+    maxWidth: 120,
+    top: 20,
+  },
+  addCreditText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  // Sections
+  sectionContainer: {
+    marginTop: 10,
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 16,
+  },
+  // Quick Actions with rows
+  quickActionsContainer: {
+    marginBottom: 8,
+  },
+  quickActionsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  quickActionCard: {
+    flex: 1,
+    alignItems: "center",
+    marginHorizontal: 4,
+  },
+  emptyActionCard: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  actionIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  actionIcon: {
+    width: 24,
+    height: 24,
+  },
+  actionTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  // Promos Section
+  promosHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  promosScroll: {
+    marginHorizontal: -20,
+    paddingHorizontal: 10,
+  },
+  promoCard: {
+    borderRadius: 12,
+    width: 280,
+    marginRight: 12,
+    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  addCreditText: {
-    fontSize: scaleSize(14),
+  promoImage: {
+    width: "100%",
+    height: 120,
+  },
+  promoInfo: {
+    padding: 12,
+  },
+  promoTitle: {
+    fontSize: 16,
     fontWeight: "700",
-    color: "#FFF",
+    marginBottom: 4,
   },
-  addCreditArrow: {
-    marginLeft: 2,
+  promoDescription: {
+    fontSize: 12,
+    marginBottom: 8,
+    lineHeight: 16,
   },
-  scrollView: {
-    flex: 1,
-    marginTop: 66,
+  promoValid: {
+    fontSize: 11,
+    fontWeight: "600",
   },
-  contentContainer: {
-    paddingBottom: Platform.OS === "ios" ? 100 : 80,
+  noPromosCard: {
+    borderRadius: 12,
+    padding: 30,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  sectionContainer: {
-    
-    marginBottom: 24,
-    paddingHorizontal: 20,
+  noPromosText: {
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 8,
   },
-  sectionHeader: {
+  separate: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  // Bills Section
+  billsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
-  },
-  sectionTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  sectionIcon: {
-    width: scaleSize(36),
-    height: scaleSize(36),
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  sectionTitle: {
-    fontSize: scaleSize(18),
-    fontWeight: "700",
-    marginBottom: 10,
-    
-  },
-  sectionTitle1: {
-    fontSize: scaleSize(18),
-    fontWeight: "700",
-    marginBottom: 10,
-    marginTop:10
-    
-  },
-  seeAllButton: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 4,
   },
   seeAllText: {
-    fontSize: scaleSize(14),
+    fontSize: 14,
     fontWeight: "600",
   },
-  quickActionsContainer: {
-    paddingRight: 20,
-    gap: 12,
+  // Bill Categories
+  categoryTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginBottom: 8,
+    marginTop: 12,
+    alignSelf: "flex-start",
+    borderWidth: 1,
   },
-  quickActionCard: {
-    width: scaleSize(100),
-    padding: 16,
-    borderRadius: 16,
-    alignItems: "center",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  actionIconContainer: {
-    width: scaleSize(40),
-    height: scaleSize(40),
-    borderRadius: 25,
+  // No Bills
+  noBillsCard: {
+    borderRadius: 12,
+    padding: 30,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  actionIcon: {
-    width: scaleSize(20),
-    height: scaleSize(20),
-  },
-  quickActionText: {
-    fontSize: scaleSize(8),
-    fontWeight: "700",
+  noBillsText: {
+    fontSize: 14,
     textAlign: "center",
-    lineHeight: scaleSize(16),
+    marginTop: 8,
   },
-  announcementCard: {
-    borderRadius: 16,
-    padding: 20,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  announcementHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  announcementLabel: {
-    fontSize: scaleSize(12),
-    fontWeight: "700",
-    letterSpacing: 1,
-  },
-  announcementTitle: {
-    fontSize: scaleSize(18),
-    fontWeight: "700",
-    marginBottom: 8,
-    lineHeight: scaleSize(24),
-  },
-  announcementDescription: {
-    fontSize: scaleSize(14),
-    lineHeight: scaleSize(20),
-    marginBottom: 16,
-  },
-  announcementFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  announcementDate: {
-    fontSize: scaleSize(12),
-  },
-  readMoreText: {
-    fontSize: scaleSize(14),
-    fontWeight: "600",
-  },
+  // Bill Card
   billCard: {
-    borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: "hidden",
-  },
-  billContent: {
+    borderRadius: 8,
     padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
   },
-  billHeader: {
+  billInfo: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
   },
-  billDateContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+  billDetails: {
+    flex: 1,
   },
-  billDateIcon: {
-    opacity: 0.7,
+  billTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 4,
   },
   billDate: {
-    fontSize: scaleSize(14),
-    fontWeight: "500",
+    fontSize: 14,
   },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  statusTextBadge: {
-    fontSize: scaleSize(12),
-    fontWeight: "600",
-  },
-  billDescription: {
-    fontSize: scaleSize(15),
-    marginBottom: 16,
-    lineHeight: scaleSize(22),
-  },
-  billFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  billRight: {
+    alignItems: "flex-end",
   },
   billAmount: {
-    fontSize: scaleSize(20),
+    fontSize: 18,
     fontWeight: "700",
+    marginBottom: 4,
   },
-  payButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
+  billStatus: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  payNowButton: {
     paddingVertical: 10,
     borderRadius: 8,
-    gap: 6,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    alignItems: "center",
   },
-  payButtonText: {
-    fontSize: scaleSize(14),
+  payNowText: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "600",
-    color: "#fff",
   },
+  // Loading
   loadingContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1094,17 +1232,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   loadingText: {
-    fontSize: scaleSize(14),
+    fontSize: 14,
   },
-  noBillsContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 30,
-  },
-  noBillsText: {
-    fontSize: scaleSize(14),
-    marginTop: 10,
-  },
+  // Footer
   bottomSpacer: {
     height: 20,
   },

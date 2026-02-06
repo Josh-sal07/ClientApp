@@ -1,140 +1,75 @@
-import { useRouter, Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { AppState, Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SplashScreen from "expo-splash-screen";
+import * as LocalAuthentication from "expo-local-authentication";
 
+import AnimatedSplash from "../components/AnimatedSplash";
 import { ThemeProvider } from "../theme/ThemeContext";
 import { useUserStore } from "../store/user";
 import useSessionTimeout from "../hooks/useSessionTimeout";
-import * as LocalAuthentication from "expo-local-authentication";
+
+// 🔒 GLOBAL GUARD — survives remounts
+let splashShown = false;
+
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const router = useRouter();
   const loadUser = useUserStore((s) => s.loadUser);
 
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-
+  const [showSplash, setShowSplash] = useState(!splashShown);
   const hasNavigated = useRef(false);
-  const isMounted = useRef(true);
 
-  // 🔐 SESSION TIMEOUT TRACKING
   useSessionTimeout();
 
-  // 🔄 HANDLE APP FOREGROUND (session + auth)
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", async (state) => {
-      if (state !== "active") return;
+  const checkAuth = async () => {
+    if (hasNavigated.current) return;
+    hasNavigated.current = true;
 
+    try {
+      const token = await AsyncStorage.getItem("token");
 
-      // 1️⃣ Check session expiration
-      const expired = await AsyncStorage.getItem("session_expired");
-
-      if (expired === "true") {
-        await AsyncStorage.removeItem("session_expired");
-
-        Alert.alert(
-          "Session Timed Out",
-          "Please login again.",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                router.replace("/(auth)/(login)/login");
-              },
-            },
-          ],
-          { cancelable: false },
-        );
+      if (!token) {
+        router.replace("/(auth)/(login)/login");
         return;
       }
 
-      // 2️⃣ Re-check authentication
-      hasNavigated.current = false;
-      checkAuth();
-    });
+      const biometricEnabled = await AsyncStorage.getItem("biometric_enabled");
+      if (biometricEnabled === "true") {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Unlock with Biometrics",
+          fallbackLabel: "Use MPIN",
+        });
 
-    return () => sub.remove();
-  }, []);
-
-  // 🔎 INITIAL AUTH CHECK
-  useEffect(() => {
-    isMounted.current = true;
-    checkAuth();
-
-    return () => {
-      isMounted.current = false;
-      hasNavigated.current = false;
-    };
-  }, []);
-
-  // 🔐 AUTH DECISION LOGIC
-  const checkAuth = async () => {
-    if (hasNavigated.current) {
-      return;
-    }
-
-    try {
-      setIsCheckingAuth(true);
-
-      const [phone, token] = await Promise.all([
-        AsyncStorage.getItem("phone"),
-        AsyncStorage.getItem("token"),
-      ]);
-
-      if (!isMounted.current) return;
-
-      hasNavigated.current = true;
-
-      if (!phone) {
-        router.replace("/(auth)/(phone-verify)/phone-verify");
-      } else if (!token) {
-        await AsyncStorage.setItem("temp_phone", phone);
-        router.replace("/(auth)/(login)/login");
-      } else {
-        // 🔐 BIOMETRIC GATE
-        const biometricEnabled =
-          await AsyncStorage.getItem("biometric_enabled");
-
-        if (biometricEnabled === "true") {
-          const result = await LocalAuthentication.authenticateAsync({
-            promptMessage: "Unlock with Biometrics",
-            fallbackLabel: "Use MPIN",
-          });
-
-          if (!result.success) {
-            // ⛔ Block auto-login → go to MPIN
-            await AsyncStorage.setItem("temp_phone", phone);
-            router.replace("/(auth)/(login)/login");
-            return;
-          }
+        if (!result.success) {
+          router.replace("/(auth)/(login)/login");
+          return;
         }
+      }
 
-        await loadUser();
-        router.replace("/(role)/(clienttabs)/home");
-      }
-    } catch (err) {
-
-      if (!hasNavigated.current) {
-        hasNavigated.current = true;
-        router.replace("/(auth)/(login)/login");
-      }
-    } finally {
-      if (isMounted.current) {
-        setIsCheckingAuth(false);
-      }
+      loadUser();
+      router.replace("/(role)/(clienttabs)/home");
+    } catch {
+      router.replace("/(auth)/(login)/login");
     }
   };
 
-  // ⏳ SPLASH / LOADING
-  if (isCheckingAuth) {
+  if (showSplash) {
     return (
       <ThemeProvider>
-        <Stack screenOptions={{ headerShown: false }} />
+        <AnimatedSplash
+          onFinish={async () => {
+            splashShown = true;     // ✅ prevents re-show
+            setShowSplash(false);
+            await checkAuth();
+            await SplashScreen.hideAsync();
+          }}
+        />
       </ThemeProvider>
     );
   }
 
-  // 🚀 APP
   return (
     <ThemeProvider>
       <Stack screenOptions={{ headerShown: false }} />

@@ -4,13 +4,13 @@ import {
   Dimensions,
   ActivityIndicator,
   Image,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLoginLogic } from "./login-logic.js";
 import styles from "./login.css.js";
@@ -198,7 +198,11 @@ export default function MpinLoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar backgroundColor="#00AFA1" barStyle="light-content" />
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
 
       <View style={styles.container}>
         <View style={{ flex: height < 700 ? 0.05 : 0.1 }} />
@@ -226,7 +230,7 @@ export default function MpinLoginScreen() {
         <View style={[styles.phoneSection, { marginBottom: scaleSize(30) }]}>
           {phoneNumber ? (
             <Text style={[styles.phoneNumber, { fontSize: scaleSize(18) }]}>
-              +63{phoneNumber ||  AsyncStorage.getItem("phone")}
+              +63{phoneNumber || AsyncStorage.getItem("phone")}
             </Text>
           ) : (
             <ActivityIndicator size="small" color="#00AFA1" />

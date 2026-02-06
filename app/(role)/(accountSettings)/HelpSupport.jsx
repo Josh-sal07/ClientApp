@@ -179,13 +179,13 @@ const UserSupport = () => {
   const supportHours = [
     {
       label: "Phone Support:",
-      value: "7:30AM - 6:00PM Available",
+      value: "7:30AM - 6:00PM",
       icon: "time-outline",
       color: colors.primary,
     },
     {
       label: "Response Time:",
-      value: "Average 2 hours",
+      value: "As soon as possible",
       icon: "speedometer-outline",
       color: colors.primary,
     },
@@ -314,7 +314,7 @@ const UserSupport = () => {
       
       {/* Gradient Header - This will extend under the status bar */}
       <LinearGradient
-        colors={[colors.gradientStart,  colors.gradientAlt,colors.gradientAlt1, colors.gradientEnd]}
+        colors={[colors.gradientEnd,  colors.gradientEnd,colors.gradientEnd, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.headerGradient}
@@ -466,8 +466,6 @@ const styles = StyleSheet.create({
   // Gradient Header Styles - Extends under status bar
   headerGradient: {
     paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,

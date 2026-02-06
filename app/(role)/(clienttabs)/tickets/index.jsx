@@ -799,7 +799,7 @@ const Ticket = () => {
       ]}
     >
       {/* Sad face emoji */}
-      <Text style={styles.sadEmoji}>🧾</Text>
+      <Text style={styles.sadEmoji}>🎟️</Text>
       
       <Text style={[styles.emptyText, { color: colors.text }]}>
         No tickets found

@@ -326,16 +326,6 @@ const Security = () => {
       type: "toggle",
     },
     {
-      id: "notifications",
-      title: "Notifications",
-      subtitle: "Receive notifications easily",
-      icon: "notifications-outline",
-      color: colors.primary,
-      value: notificationsEnabled,
-      onToggle: setNotificationsEnabled,
-      type: "toggle",
-    },
-    {
       id: "sms",
       title: "SMS Alerts",
       subtitle: "Receive notifications via SMS",
@@ -477,9 +467,6 @@ const Security = () => {
           colors.gradientEnd,
           colors.gradientEnd,
           colors.gradientEnd,
-          colors.gradientAlt1,
-          colors.gradientEnd,
-          colors.gradientEnd,
         ]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
@@ -580,8 +567,6 @@ const styles = StyleSheet.create({
   // Gradient Header Styles - Extends under status bar
   headerGradient: {
     paddingTop: Platform.OS === "ios" ? 0 : StatusBar.currentHeight,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,

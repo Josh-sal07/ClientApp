@@ -80,8 +80,7 @@ export default function Settings() {
           
           {/* Center - Title */}
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>App Settings</Text>
-            <Text style={styles.headerSubtitle}>Choose your preferred app appearance</Text>
+            <Text style={styles.headerTitle}>App Settings</Text> 
           </View>
           
           {/* Right side - Placeholder for alignment */}
@@ -268,8 +267,6 @@ const styles = StyleSheet.create({
   header: {
     paddingVertical: 20,
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,

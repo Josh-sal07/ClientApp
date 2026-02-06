@@ -278,7 +278,7 @@ const AccountSettings = () => {
           translucent={true}
         />
         <LinearGradient
-          colors={[colors.gradientStart, colors.gradientAlt1, colors.gradientAlt, colors.gradientEnd]}
+          colors={[colors.primary]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.headerGradient}
@@ -354,7 +354,7 @@ const AccountSettings = () => {
       
       {/* Gradient Header - This will extend under the status bar */}
       <LinearGradient
-        colors={[colors.gradientStart,colors.gradientEnd, colors.gradientAlt1, colors.gradientAlt ]}
+        colors={[colors.gradientEnd,colors.gradientEnd, colors.gradientEnd, colors.gradientEnd ]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.headerGradient}
@@ -535,8 +535,6 @@ const styles = StyleSheet.create({
   // Gradient Header Styles - Extends under status bar
   headerGradient: {
     paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,

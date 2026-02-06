@@ -776,8 +776,8 @@ export default function ForgotMpinScreen() {
       {/* Gradient Header - Different gradients for light/dark mode */}
       <LinearGradient
         colors={effectiveMode === "dark" 
-          ? [colors.gradientStart, colors.gradientAlt1, colors.gradientAlt, colors.gradientEnd]
-          : [colors.gradientStart, colors.gradientAlt1, colors.gradientAlt, colors.gradientEnd]
+          ? [colors.gradientEnd, colors.gradientEnd]
+          : [colors.gradientEnd, colors.gradientEnd]
         }
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
@@ -789,7 +789,7 @@ export default function ForgotMpinScreen() {
               style={styles.backButton}
               onPress={() => router.back()}
             >
-              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Reset MPIN</Text>
             <View style={styles.headerRightPlaceholder} />
@@ -851,9 +851,6 @@ const styles = StyleSheet.create({
   },
   // Gradient Header Styles
   gradientHeader: {
-    paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -863,7 +860,7 @@ const styles = StyleSheet.create({
   },
   headerSafeArea: {
     paddingTop: Platform.OS === 'ios' ? 50 : 0,
-    paddingBottom: 20,
+
     paddingHorizontal: 20,
   },
   headerTop: {
@@ -895,7 +892,6 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingTop: 30,
-    paddingBottom: 40,
     paddingHorizontal: 20,
   },
   logoContainer: {

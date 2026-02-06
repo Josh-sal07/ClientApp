@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   Alert,
   Vibration,
-  SafeAreaView,
   StatusBar,
   Dimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 
@@ -188,8 +188,6 @@ export default function QRScannerScreen() {
             style={styles.manualButton}
             onPress={handleManualInput}
           >
-            <Ionicons name="keypad" size={20} color={COLORS.primary} />
-            <Text style={styles.manualButtonText}>Enter Manually</Text>
           </TouchableOpacity>
 
           {scanned && (

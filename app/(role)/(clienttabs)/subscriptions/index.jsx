@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { MaterialIcons } from "@expo/vector-icons";
 import {
   ScrollView,
   StyleSheet,
@@ -81,19 +82,21 @@ const MySubscriptionsScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [creditsPaymentProcessing, setCreditsPaymentProcessing] = useState(false);
-  
+  const [creditsPaymentProcessing, setCreditsPaymentProcessing] =
+    useState(false);
+
   // WebView payment states
   const [showWebView, setShowWebView] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
-  const [selectedSubscriptionForPayment, setSelectedSubscriptionForPayment] = useState(null);
+  const [selectedSubscriptionForPayment, setSelectedSubscriptionForPayment] =
+    useState(null);
   const [paymentUrl, setPaymentUrl] = useState("");
 
   // Loading states for navigation
   const [loadingNavigation, setLoadingNavigation] = useState({
     viewDetails: false,
     billingHistory: false,
-    subscriptionId: null
+    subscriptionId: null,
   });
 
   const scrollViewRef = useRef(null);
@@ -183,18 +186,18 @@ const MySubscriptionsScreen = () => {
       setLoadingNavigation({
         viewDetails: true,
         billingHistory: false,
-        subscriptionId: subscription.id
+        subscriptionId: subscription.id,
       });
 
       // Simulate a small delay for better UX
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       router.push({
         pathname: `/${subscription.id}`,
-        params: { 
+        params: {
           subscription: JSON.stringify(subscription),
-          colors: JSON.stringify(colors)
-        }
+          colors: JSON.stringify(colors),
+        },
       });
     } catch (error) {
       Alert.alert("Error", "Failed to navigate to subscription details.");
@@ -203,7 +206,7 @@ const MySubscriptionsScreen = () => {
       setLoadingNavigation({
         viewDetails: false,
         billingHistory: false,
-        subscriptionId: null
+        subscriptionId: null,
       });
     }
   };
@@ -214,18 +217,18 @@ const MySubscriptionsScreen = () => {
       setLoadingNavigation({
         viewDetails: false,
         billingHistory: true,
-        subscriptionId: subscription.id
+        subscriptionId: subscription.id,
       });
 
       // Simulate a small delay for better UX
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       router.push({
         pathname: `/${subscription.id}/billHistory`,
-        params: { 
+        params: {
           subscription: JSON.stringify(subscription),
-          colors: JSON.stringify(colors)
-        }
+          colors: JSON.stringify(colors),
+        },
       });
     } catch (error) {
       Alert.alert("Error", "Failed to navigate to billing history.");
@@ -234,7 +237,7 @@ const MySubscriptionsScreen = () => {
       setLoadingNavigation({
         viewDetails: false,
         billingHistory: false,
-        subscriptionId: null
+        subscriptionId: null,
       });
     }
   };
@@ -393,8 +396,7 @@ const MySubscriptionsScreen = () => {
                 );
                 handleWebViewClose(false);
               }}
-              onHttpError={(error) => {
-              }}
+              onHttpError={(error) => {}}
             />
           ) : (
             <View
@@ -429,19 +431,67 @@ const MySubscriptionsScreen = () => {
   const renderSubscriptionCard = (subscription) => {
     const billingHistory = getBillingHistory(subscription);
     const currentBilling = billingHistory.length > 0 ? billingHistory[0] : null;
-    
+
     const isSubscriptionActive = subscription.status === "active";
-    const isSubscriptionEnded = subscription.status === "ended" || subscription.status === "cancelled" || subscription.status === "terminated";
-    const isCurrentBillUnpaid = currentBilling && currentBilling.status === "unpaid";
-    const shouldShowPaymentButtons = isSubscriptionActive && isCurrentBillUnpaid;
+    const isSubscriptionEnded =
+      subscription.status === "ended" ||
+      subscription.status === "cancelled" ||
+      subscription.status === "terminated";
+    const isCurrentBillUnpaid =
+      currentBilling && currentBilling.status === "unpaid";
+    const shouldShowPaymentButtons =
+      isSubscriptionActive && isCurrentBillUnpaid;
 
     // Check if this subscription is loading for View Details
-    const isViewDetailsLoading = loadingNavigation.viewDetails && 
-                               loadingNavigation.subscriptionId === subscription.id;
-    
+    const isViewDetailsLoading =
+      loadingNavigation.viewDetails &&
+      loadingNavigation.subscriptionId === subscription.id;
+
     // Check if this subscription is loading for Billing History
-    const isBillingHistoryLoading = loadingNavigation.billingHistory && 
-                                  loadingNavigation.subscriptionId === subscription.id;
+    const isBillingHistoryLoading =
+      loadingNavigation.billingHistory &&
+      loadingNavigation.subscriptionId === subscription.id;
+
+    // Determine bill title based on subscription status
+    const getBillTitle = () => {
+      if (isSubscriptionEnded) {
+        return "Final Bill";
+      } else if (isSubscriptionActive) {
+        return "Current Bill";
+      }
+      return "Bill Summary";
+    };
+
+    // Get appropriate status message
+    const getStatusMessage = () => {
+      if (isSubscriptionEnded && isCurrentBillUnpaid) {
+        return {
+          icon: "warning-outline",
+          color: colors.warning,
+          text: "Unpaid balance on ended subscription. Contact support.",
+          type: "warning",
+        };
+      } else if (isSubscriptionEnded && currentBilling?.status === "paid") {
+        return {
+          icon: "checkmark-circle-outline",
+          color: colors.success,
+          text: "Subscription ended. All bills settled.",
+          type: "success",
+        };
+      } else if (isSubscriptionActive && currentBilling?.status === "paid") {
+        return {
+          icon: "checkmark-circle-outline",
+          color: colors.success,
+          text: "Payment completed for this billing period",
+          type: "success",
+        };
+      } else if (isSubscriptionActive && isCurrentBillUnpaid) {
+        return null; // No message needed as payment buttons will show
+      }
+      return null;
+    };
+
+    const statusMessage = getStatusMessage();
 
     return (
       <View key={subscription.id} style={styles.subscriptionCardContainer}>
@@ -450,22 +500,49 @@ const MySubscriptionsScreen = () => {
             styles.subscriptionCard,
             {
               backgroundColor: colors.surface,
-              borderColor: colors.primary + "90",
+              borderColor: isSubscriptionEnded
+                ? colors.gray + "50"
+                : colors.primary + "90",
               shadowColor: effectiveMode === "dark" ? "transparent" : "#000",
+              opacity: isSubscriptionEnded ? 0.9 : 1,
             },
           ]}
         >
           {/* Card Header with Status Badge */}
           <View style={styles.cardHeader}>
             <View style={styles.accountInfo}>
-              <View style={styles.accountIconContainer}>
-                <Ionicons name="wifi-outline" size={20} color={colors.white} />
+              <View
+                style={[
+                  styles.accountIconContainer,
+                  {
+                    backgroundColor: isSubscriptionEnded
+                      ? colors.gray
+                      : colors.primary,
+                  },
+                ]}
+              >
+                <MaterialIcons
+                  name={isSubscriptionEnded ? "wifi-off" : "wifi"}
+                  size={20}
+                  color={colors.white}
+                />
               </View>
               <View>
-                <Text style={[styles.accountLabel, { color: colors.textLight }]}>
+                <Text
+                  style={[styles.accountLabel, { color: colors.textLight }]}
+                >
                   Account Number
                 </Text>
-                <Text style={[styles.accountNumber, { color: colors.text }]}>
+                <Text
+                  style={[
+                    styles.accountNumber,
+                    {
+                      color: isSubscriptionEnded
+                        ? colors.textLight
+                        : colors.text,
+                    },
+                  ]}
+                >
                   {subscription.subscription_id || "N/A"}
                 </Text>
               </View>
@@ -506,79 +583,70 @@ const MySubscriptionsScreen = () => {
           <View style={styles.cardBody}>
             {/* Plan Info */}
             <View style={styles.infoRow}>
-              <View style={[styles.infoIcon, { backgroundColor: colors.primary + "10" }]}>
-                <Ionicons name="speedometer-outline" size={16} color={colors.primary} />
+              <View
+                style={[
+                  styles.infoIcon,
+                  {
+                    backgroundColor: isSubscriptionEnded
+                      ? colors.gray + "10"
+                      : colors.primary + "10",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="speedometer-outline"
+                  size={16}
+                  color={isSubscriptionEnded ? colors.gray : colors.primary}
+                />
               </View>
               <View style={styles.infoContent}>
                 <Text style={[styles.infoLabel, { color: colors.textLight }]}>
                   Plan
                 </Text>
-                <Text style={[styles.infoValue, { color: colors.text }]}>
+                <Text
+                  style={[
+                    styles.infoValue,
+                    {
+                      color: isSubscriptionEnded
+                        ? colors.textLight
+                        : colors.text,
+                    },
+                  ]}
+                >
                   {subscription?.plan?.name || "N/A"}
                 </Text>
               </View>
             </View>
 
-            {/* Dates */}
-            <View style={styles.datesContainer}>
-              <View style={styles.dateColumn}>
-                <View style={[styles.infoIcon, { backgroundColor: colors.primary + "10" }]}>
-                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-                </View>
-                <View style={styles.infoContent}>
-                  <Text style={[styles.infoLabel, { color: colors.textLight }]}>
-                    Started
-                  </Text>
-                  <Text style={[styles.infoValue, { color: colors.text }]}>
-                    {formatDate(subscription.start_date)}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.dateColumn}>
-                <View style={[styles.infoIcon, { backgroundColor: colors.primary + "10" }]}>
-                  <Ionicons name="calendar-clear-outline" size={16} color={colors.primary} />
-                </View>
-                <View style={styles.infoContent}>
-                  <Text style={[styles.infoLabel, { color: colors.textLight }]}>
-                    Transaction
-                  </Text>
-                  <Text style={[styles.infoValue, { color: colors.text }]}>
-                    {formatDate(subscription.transaction_date)}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Address */}
-            <View style={styles.infoRow}>
-              <View style={[styles.infoIcon, { backgroundColor: colors.primary + "10" }]}>
-                <Ionicons name="location-outline" size={16} color={colors.primary} />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={[styles.infoLabel, { color: colors.textLight }]}>
-                  Installation Address
-                </Text>
-                <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={2}>
-                  {subscription.installation_address || "N/A"}
-                </Text>
-              </View>
-            </View>
-
-            {/* Current Billing Section */}
+            {/* Current/Final Bill Section */}
             {currentBilling && (
               <View
                 style={[
                   styles.currentBillingContainer,
                   {
-                    backgroundColor: colors.primary + "08",
-                    borderColor: colors.primary + "15",
+                    backgroundColor: isSubscriptionEnded
+                      ? colors.gray + "05"
+                      : colors.primary + "08",
+                    borderColor: isSubscriptionEnded
+                      ? colors.gray + "20"
+                      : colors.primary + "15",
                   },
                 ]}
               >
                 <View style={styles.billingHeader}>
-                  <Text style={[styles.billingTitle, { color: colors.text }]}>
-                    Current Billing
+                  <Text
+                    style={[
+                      styles.billingTitle,
+                      {
+                        color: isSubscriptionEnded
+                          ? colors.textLight
+                          : colors.text,
+                      },
+                    ]}
+                  >
+                    {getBillTitle().toUpperCase()}
                   </Text>
+
                   <View style={styles.billingStatusContainer}>
                     <View
                       style={[
@@ -603,24 +671,39 @@ const MySubscriptionsScreen = () => {
 
                 <View style={styles.billingDetails}>
                   <View style={styles.billingAmountContainer}>
-                    <Text style={[styles.billingLabel, { color: colors.textLight }]}>
-                      Amount Due
+                    <Text
+                      style={[styles.billingLabel, { color: colors.textLight }]}
+                    >
+                      Amount {isCurrentBillUnpaid ? "Due" : "Paid"}
                     </Text>
-                    <Text style={[styles.billingAmount, { color: colors.text }]}>
+                    <Text
+                      style={[
+                        styles.billingAmount,
+                        {
+                          color: isSubscriptionEnded
+                            ? colors.textLight
+                            : colors.text,
+                        },
+                      ]}
+                    >
                       {formatCurrency(currentBilling.amount_due)}
                     </Text>
                   </View>
                   <View style={styles.billingDateContainer}>
-                    <Text style={[styles.billingLabel, { color: colors.textLight }]}>
-                      Due Date
+                    <Text
+                      style={[styles.billingLabel, { color: colors.textLight }]}
+                    >
+                      {isSubscriptionEnded ? "Closed On" : "Due Date"}
                     </Text>
-                    <Text style={[styles.billingDate, { color: colors.textLight }]}>
+                    <Text
+                      style={[styles.billingDate, { color: colors.textLight }]}
+                    >
                       {formatDate(currentBilling.due_date)}
                     </Text>
                   </View>
                 </View>
 
-                {/* Payment Buttons */}
+                {/* Payment Buttons - Only show for active subscriptions */}
                 {shouldShowPaymentButtons && (
                   <View style={styles.paymentButtonsContainer}>
                     <TouchableOpacity
@@ -640,7 +723,8 @@ const MySubscriptionsScreen = () => {
                             { text: "Cancel", style: "cancel" },
                             {
                               text: "Proceed to Payment",
-                              onPress: () => handlePayNow(currentBilling, subscription),
+                              onPress: () =>
+                                handlePayNow(currentBilling, subscription),
                               style: "default",
                             },
                           ],
@@ -680,7 +764,11 @@ const MySubscriptionsScreen = () => {
                             { text: "Cancel", style: "cancel" },
                             {
                               text: "Proceed",
-                              onPress: () => handlePayWithCreditsPoints(currentBilling, subscription),
+                              onPress: () =>
+                                handlePayWithCreditsPoints(
+                                  currentBilling,
+                                  subscription,
+                                ),
                               style: "default",
                             },
                           ],
@@ -708,46 +796,23 @@ const MySubscriptionsScreen = () => {
                 )}
 
                 {/* Status Messages */}
-                {!shouldShowPaymentButtons && (
+                {statusMessage && (
                   <View style={styles.statusMessageContainer}>
-                    {isSubscriptionEnded && (
-                      <View style={styles.statusMessage}>
-                        <Ionicons 
-                          name="checkmark-circle-outline" 
-                          size={18} 
-                          color={colors.success} 
-                        />
-                        <Text style={[styles.statusMessageText, { color: colors.success }]}>
-                          Subscription ended. No further payments required.
-                        </Text>
-                      </View>
-                    )}
-
-                    {isSubscriptionActive && currentBilling.status === "paid" && (
-                      <View style={styles.statusMessage}>
-                        <Ionicons 
-                          name="checkmark-circle-outline" 
-                          size={18} 
-                          color={colors.success} 
-                        />
-                        <Text style={[styles.statusMessageText, { color: colors.success }]}>
-                          Payment completed for this billing period
-                        </Text>
-                      </View>
-                    )}
-
-                    {isSubscriptionEnded && isCurrentBillUnpaid && (
-                      <View style={styles.statusMessage}>
-                        <Ionicons 
-                          name="warning-outline" 
-                          size={18} 
-                          color={colors.warning} 
-                        />
-                        <Text style={[styles.statusMessageText, { color: colors.warning }]}>
-                          Unpaid balance on ended subscription. Contact support.
-                        </Text>
-                      </View>
-                    )}
+                    <View style={styles.statusMessage}>
+                      <Ionicons
+                        name={statusMessage.icon}
+                        size={18}
+                        color={statusMessage.color}
+                      />
+                      <Text
+                        style={[
+                          styles.statusMessageText,
+                          { color: statusMessage.color },
+                        ]}
+                      >
+                        {statusMessage.text}
+                      </Text>
+                    </View>
                   </View>
                 )}
               </View>
@@ -755,40 +820,93 @@ const MySubscriptionsScreen = () => {
           </View>
 
           {/* Card Footer */}
-          <View style={[styles.cardFooter, { borderTopColor: colors.border + "80" }]}>
+          <View
+            style={[
+              styles.cardFooter,
+              {
+                borderTopColor: isSubscriptionEnded
+                  ? colors.border + "40"
+                  : colors.border + "80",
+              },
+            ]}
+          >
             {/* View Details Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.footerButton}
               onPress={() => handleViewDetails(subscription)}
               disabled={isViewDetailsLoading || isBillingHistoryLoading}
             >
-              <View style={[styles.footerIconContainer, { backgroundColor: colors.primary + "10" }]}>
+              <View
+                style={[
+                  styles.footerIconContainer,
+                  {
+                    backgroundColor: isSubscriptionEnded
+                      ? colors.gray + "10"
+                      : colors.primary + "10",
+                  },
+                ]}
+              >
                 {isViewDetailsLoading ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <ActivityIndicator
+                    size="small"
+                    color={isSubscriptionEnded ? colors.gray : colors.primary}
+                  />
                 ) : (
-                  <Ionicons name="document-text-outline" size={30} color={colors.primary} />
+                  <Ionicons
+                    name="document-text-outline"
+                    size={30}
+                    color={isSubscriptionEnded ? colors.gray : colors.primary}
+                  />
                 )}
               </View>
-              <Text style={[styles.footerButtonText, { color: colors.primary }]}>
+              <Text
+                style={[
+                  styles.footerButtonText,
+                  { color: isSubscriptionEnded ? colors.gray : colors.primary },
+                ]}
+              >
                 {isViewDetailsLoading ? "Loading..." : "View Details"}
               </Text>
             </TouchableOpacity>
-            
+
             {/* Billing History Button */}
             {subscription.billing && subscription.billing.length > 0 && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.footerButton}
                 onPress={() => handleViewBillingHistory(subscription)}
                 disabled={isViewDetailsLoading || isBillingHistoryLoading}
               >
-                <View style={[styles.footerIconContainer, { backgroundColor: colors.primary + "10" }]}>
+                <View
+                  style={[
+                    styles.footerIconContainer,
+                    {
+                      backgroundColor: isSubscriptionEnded
+                        ? colors.gray + "10"
+                        : colors.primary + "10",
+                    },
+                  ]}
+                >
                   {isBillingHistoryLoading ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <ActivityIndicator
+                      size="small"
+                      color={isSubscriptionEnded ? colors.gray : colors.primary}
+                    />
                   ) : (
-                    <Ionicons name="receipt-outline" size={30} color={colors.primary} />
+                    <Ionicons
+                      name="receipt-outline"
+                      size={30}
+                      color={isSubscriptionEnded ? colors.gray : colors.primary}
+                    />
                   )}
                 </View>
-                <Text style={[styles.footerButtonText, { color: colors.primary }]}>
+                <Text
+                  style={[
+                    styles.footerButtonText,
+                    {
+                      color: isSubscriptionEnded ? colors.gray : colors.primary,
+                    },
+                  ]}
+                >
                   {isBillingHistoryLoading ? "Loading..." : "Billing History"}
                 </Text>
               </TouchableOpacity>
@@ -802,7 +920,6 @@ const MySubscriptionsScreen = () => {
   if (loading && !refreshing) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-       
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.textLight }]}>
@@ -816,9 +933,13 @@ const MySubscriptionsScreen = () => {
   if (error) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-    
         <View style={styles.errorContainer}>
-          <View style={[styles.errorIconContainer, { backgroundColor: colors.danger + "10" }]}>
+          <View
+            style={[
+              styles.errorIconContainer,
+              { backgroundColor: colors.danger + "10" },
+            ]}
+          >
             <Ionicons name="warning-outline" size={40} color={colors.danger} />
           </View>
           <Text style={[styles.errorTitle, { color: colors.text }]}>
@@ -841,15 +962,13 @@ const MySubscriptionsScreen = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-    
-      
       {/* Header with Image Background */}
       <StatusBar
         barStyle="light-content"
         backgroundColor="transparent"
         translucent={true}
       />
-      
+
       {/* Background Image Container */}
       <View style={styles.imageContainer}>
         <ImageBackground
@@ -860,17 +979,14 @@ const MySubscriptionsScreen = () => {
           {/* Optional dark overlay for better text readability */}
           <View style={styles.imageOverlay} />
         </ImageBackground>
-        
+
         {/* Summary Card positioned over the image */}
-        <View style={[
-          styles.summaryCard,
-        ]}>
+        <View style={[styles.summaryCard]}>
           <View style={styles.summaryHeader}>
             <View style={styles.summaryContent}>
               <Text style={[styles.summaryTitle, { color: colors.white }]}>
                 My Subscriptions
               </Text>
-              
             </View>
           </View>
         </View>
@@ -896,17 +1012,26 @@ const MySubscriptionsScreen = () => {
           { useNativeDriver: false },
         )}
       >
-        
         {/* Subscriptions List */}
         <View style={styles.section}>
           <Text style={[styles.summarySubtitle, { color: colors.text }]}>
-                {subscriptions.length} active subscription{subscriptions.length !== 1 ? 's' : ''}
-              </Text>
-          
+            {subscriptions.length} active subscription
+            {subscriptions.length !== 1 ? "s" : ""}
+          </Text>
+
           {subscriptions.length === 0 ? (
             <View style={styles.noDataContainer}>
-              <View style={[styles.noDataIconContainer, { backgroundColor: colors.primary + "10" }]}>
-                <Ionicons name="receipt-outline" size={40} color={colors.primary} />
+              <View
+                style={[
+                  styles.noDataIconContainer,
+                  { backgroundColor: colors.primary + "10" },
+                ]}
+              >
+                <Ionicons
+                  name="receipt-outline"
+                  size={40}
+                  color={colors.primary}
+                />
               </View>
               <Text style={[styles.noDataTitle, { color: colors.text }]}>
                 No subscriptions found
@@ -925,7 +1050,9 @@ const MySubscriptionsScreen = () => {
                 onPress={onRefresh}
               >
                 <Ionicons name="refresh" size={18} color={colors.primary} />
-                <Text style={[styles.refreshButtonText, { color: colors.primary }]}>
+                <Text
+                  style={[styles.refreshButtonText, { color: colors.primary }]}
+                >
                   Refresh
                 </Text>
               </TouchableOpacity>
@@ -953,20 +1080,20 @@ const MySubscriptionsScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { 
+  container: {
     flex: 1,
   },
   // Background image container
   imageContainer: {
     height: 260,
-    position: 'relative',
+    position: "relative",
   },
   backgroundImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   imageOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -974,11 +1101,11 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 24,
   },
   summaryCard: {
-    backgroundColor:'transparent',
-    position: 'absolute',
-    maxWidth:200,
-    top:205,
-    right:175,
+    backgroundColor: "transparent",
+    position: "absolute",
+    maxWidth: 200,
+    top: 205,
+    right: 175,
     padding: 20,
     elevation: 8,
     zIndex: 10,
@@ -1004,8 +1131,8 @@ const styles = StyleSheet.create({
   summarySubtitle: {
     fontSize: 14,
     opacity: 4,
-    left:5,
-    marginBottom:20
+    left: 5,
+    marginBottom: 20,
   },
   summaryStats: {
     flexDirection: "row",
@@ -1031,11 +1158,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.1)",
     marginHorizontal: 10,
   },
-  scrollView: { 
+  scrollView: {
     flex: 1,
     marginTop: 0,
   },
-  scrollContent: { 
+  scrollContent: {
     padding: 20,
     paddingTop: 20,
     paddingBottom: 40,
@@ -1262,7 +1389,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 40,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
     borderRadius: 16,
     marginTop: 10,
   },
@@ -1410,6 +1537,19 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "600",
     fontSize: 16,
+  },
+  subscriptionCardEnded: {
+    opacity: 0.9,
+  },
+  accountIconEnded: {
+    backgroundColor: "#718096",
+  },
+  infoIconEnded: {
+    backgroundColor: "rgba(113, 128, 150, 0.1)",
+  },
+  billingContainerEnded: {
+    backgroundColor: "rgba(113, 128, 150, 0.05)",
+    borderColor: "rgba(113, 128, 150, 0.2)",
   },
 });
 
