@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { MaterialIcons } from "@expo/vector-icons";
 import {
   ScrollView,
@@ -24,6 +24,8 @@ import { WebView } from "react-native-webview";
 import { useTheme } from "../../../../theme/ThemeContext";
 import { useColorScheme } from "react-native";
 import { sharedScrollY } from "../../../../shared/sharedScroll";
+import { useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
 const { width, height } = Dimensions.get("window");
 
@@ -33,6 +35,35 @@ const MySubscriptionsScreen = () => {
   const { mode, theme } = useTheme();
   const systemColorScheme = useColorScheme();
   const scrollY = sharedScrollY;
+  const { focusSubscriptionId, focusBillingId } = useLocalSearchParams();
+  
+  const subscriptionPositions = useRef({});
+  const hasAutoFocused = useRef(false);
+  const scrollViewRef = useRef(null);
+
+  const [focusedSubId, setFocusedSubId] = useState(null);
+  const glowAnim = useRef(new Animated.Value(0)).current;
+  
+  // Subscription data state
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [creditsPaymentProcessing, setCreditsPaymentProcessing] = useState(false);
+
+  // WebView payment states
+  const [showWebView, setShowWebView] = useState(false);
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [selectedSubscriptionForPayment, setSelectedSubscriptionForPayment] = useState(null);
+  const [paymentUrl, setPaymentUrl] = useState("");
+
+  // Loading states for navigation
+  const [loadingNavigation, setLoadingNavigation] = useState({
+    viewDetails: false,
+    billingHistory: false,
+    subscriptionId: null,
+  });
 
   // Determine effective theme mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
@@ -76,30 +107,6 @@ const MySubscriptionsScreen = () => {
   };
 
   const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
-
-  const [subscriptions, setSubscriptions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(null);
-  const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [creditsPaymentProcessing, setCreditsPaymentProcessing] =
-    useState(false);
-
-  // WebView payment states
-  const [showWebView, setShowWebView] = useState(false);
-  const [selectedBill, setSelectedBill] = useState(null);
-  const [selectedSubscriptionForPayment, setSelectedSubscriptionForPayment] =
-    useState(null);
-  const [paymentUrl, setPaymentUrl] = useState("");
-
-  // Loading states for navigation
-  const [loadingNavigation, setLoadingNavigation] = useState({
-    viewDetails: false,
-    billingHistory: false,
-    subscriptionId: null,
-  });
-
-  const scrollViewRef = useRef(null);
 
   const getToken = async () => {
     try {
@@ -156,8 +163,114 @@ const MySubscriptionsScreen = () => {
     fetchSubscriptionData();
   }, [user]);
 
+  // Handle auto-focus when coming from Home screen
+  useEffect(() => {
+    if (!focusSubscriptionId) return;
+    
+    console.log("Focus subscription ID received:", focusSubscriptionId);
+    setFocusedSubId(focusSubscriptionId);
+    
+    // Reset auto-focus flag when subscription ID changes
+    hasAutoFocused.current = false;
+  }, [focusSubscriptionId]);
+
+  // Handle billing ID glow animation
+  useEffect(() => {
+    if (focusBillingId) {
+      console.log("Focus billing ID received:", focusBillingId);
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, {
+            toValue: 1,
+            duration: 700,
+            useNativeDriver: false,
+          }),
+          Animated.timing(glowAnim, {
+            toValue: 0,
+            duration: 700,
+            useNativeDriver: false,
+          }),
+        ]),
+      ).start();
+    }
+  }, [focusBillingId]);
+
+  // Auto-scroll to focused subscription when subscriptions are loaded
+  useFocusEffect(
+    useCallback(() => {
+      if (!focusSubscriptionId || subscriptions.length === 0 || hasAutoFocused.current) {
+        return;
+      }
+
+      console.log("Attempting to auto-focus on subscription:", focusSubscriptionId);
+      console.log("Total subscriptions:", subscriptions.length);
+      
+      // Find the subscription
+      const subscription = subscriptions.find(
+        sub => sub.subscription_id === focusSubscriptionId || 
+               sub.id === focusSubscriptionId
+      );
+      
+      if (!subscription) {
+        console.log("Subscription not found with ID:", focusSubscriptionId);
+        return;
+      }
+
+      // Give time for the layout to render
+      const scrollTimer = setTimeout(() => {
+        const y = subscriptionPositions.current[focusSubscriptionId];
+        console.log("Subscription position Y:", y);
+        
+        if (y !== undefined && scrollViewRef.current) {
+          hasAutoFocused.current = true;
+          
+          // Scroll to position with some padding
+          scrollViewRef.current.scrollTo({ 
+            y: Math.max(0, y - 150), 
+            animated: true 
+          });
+          
+          console.log("Scrolled to position:", y - 150);
+          
+          // Add highlight animation
+          Animated.sequence([
+            Animated.timing(glowAnim, {
+              toValue: 1,
+              duration: 500,
+              useNativeDriver: false,
+            }),
+            Animated.delay(1000),
+            Animated.timing(glowAnim, {
+              toValue: 0.3,
+              duration: 1000,
+              useNativeDriver: false,
+            }),
+          ]).start();
+        } else {
+          console.log("Position not found or scrollView not ready");
+          // Try again after a delay
+          if (!hasAutoFocused.current) {
+            setTimeout(() => {
+              const y2 = subscriptionPositions.current[focusSubscriptionId];
+              if (y2 !== undefined && scrollViewRef.current) {
+                hasAutoFocused.current = true;
+                scrollViewRef.current.scrollTo({ 
+                  y: Math.max(0, y2 - 150), 
+                  animated: true 
+                });
+              }
+            }, 500);
+          }
+        }
+      }, 300);
+
+      return () => clearTimeout(scrollTimer);
+    }, [focusSubscriptionId, subscriptions])
+  );
+
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
+    hasAutoFocused.current = false; // Reset auto-focus flag
     await fetchSubscriptionData();
     setRefreshing(false);
   }, [user]);
@@ -430,27 +543,22 @@ const MySubscriptionsScreen = () => {
 
   const renderSubscriptionCard = (subscription) => {
     const billingHistory = getBillingHistory(subscription);
-    const currentBilling = billingHistory.length > 0 ? billingHistory[0] : null;
+    const currentBilling = billingHistory.find((b) => b.status === "unpaid") || billingHistory[0] || null;
 
     const isSubscriptionActive = subscription.status === "active";
-    const isSubscriptionEnded =
-      subscription.status === "ended" ||
-      subscription.status === "cancelled" ||
-      subscription.status === "terminated";
-    const isCurrentBillUnpaid =
-      currentBilling && currentBilling.status === "unpaid";
-    const shouldShowPaymentButtons =
-      isSubscriptionActive && isCurrentBillUnpaid;
+    const isSubscriptionEnded = subscription.status === "ended" || subscription.status === "cancelled" || subscription.status === "terminated";
+    const isCurrentBillUnpaid = currentBilling && currentBilling.status === "unpaid";
+    const shouldShowPaymentButtons = isSubscriptionActive && isCurrentBillUnpaid;
+
+    // Check if this subscription should be focused
+    const isFocusedSub = focusSubscriptionId === subscription.subscription_id || focusSubscriptionId === subscription.id;
+    const isFocusedBilling = isFocusedSub && focusBillingId === currentBilling?.id;
 
     // Check if this subscription is loading for View Details
-    const isViewDetailsLoading =
-      loadingNavigation.viewDetails &&
-      loadingNavigation.subscriptionId === subscription.id;
+    const isViewDetailsLoading = loadingNavigation.viewDetails && loadingNavigation.subscriptionId === subscription.id;
 
     // Check if this subscription is loading for Billing History
-    const isBillingHistoryLoading =
-      loadingNavigation.billingHistory &&
-      loadingNavigation.subscriptionId === subscription.id;
+    const isBillingHistoryLoading = loadingNavigation.billingHistory && loadingNavigation.subscriptionId === subscription.id;
 
     // Determine bill title based on subscription status
     const getBillTitle = () => {
@@ -493,8 +601,42 @@ const MySubscriptionsScreen = () => {
 
     const statusMessage = getStatusMessage();
 
+    // Animated styles for focused subscription
+    const focusedCardStyle = isFocusedSub ? {
+      borderWidth: 2,
+      borderColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOpacity: glowAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.3, 0.8],
+      }),
+      shadowRadius: 10,
+      elevation: 8,
+      transform: [{
+        scale: glowAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 1.01],
+        }),
+      }],
+    } : {};
+
+    const focusedBillingStyle = isFocusedBilling ? {
+      backgroundColor: colors.primary + "15",
+      borderColor: colors.primary + "40",
+    } : {};
+
     return (
-      <View key={subscription.id} style={styles.subscriptionCardContainer}>
+      <Animated.View
+        key={subscription.subscription_id || subscription.id}
+        onLayout={(e) => {
+          const subId = subscription.subscription_id || subscription.id;
+          if (subId) {
+            subscriptionPositions.current[subId] = e.nativeEvent.layout.y;
+            console.log(`Layout for ${subId}:`, e.nativeEvent.layout.y);
+          }
+        }}
+        style={[styles.subscriptionCardContainer, focusedCardStyle]}
+      >
         <View
           style={[
             styles.subscriptionCard,
@@ -540,10 +682,12 @@ const MySubscriptionsScreen = () => {
                       color: isSubscriptionEnded
                         ? colors.textLight
                         : colors.text,
+                      fontWeight: isFocusedSub ? "800" : "700",
                     },
                   ]}
                 >
                   {subscription.subscription_id || "N/A"}
+                  {isFocusedSub && " ⭐"}
                 </Text>
               </View>
             </View>
@@ -619,8 +763,8 @@ const MySubscriptionsScreen = () => {
             </View>
 
             {/* Current/Final Bill Section */}
-            {currentBilling && (
-              <View
+            {(isFocusedBilling || currentBilling) && (
+              <Animated.View
                 style={[
                   styles.currentBillingContainer,
                   {
@@ -631,6 +775,7 @@ const MySubscriptionsScreen = () => {
                       ? colors.gray + "20"
                       : colors.primary + "15",
                   },
+                  focusedBillingStyle,
                 ]}
               >
                 <View style={styles.billingHeader}>
@@ -641,10 +786,12 @@ const MySubscriptionsScreen = () => {
                         color: isSubscriptionEnded
                           ? colors.textLight
                           : colors.text,
+                        fontWeight: isFocusedBilling ? "800" : "600",
                       },
                     ]}
                   >
                     {getBillTitle().toUpperCase()}
+                    {isFocusedBilling && " 🔥"}
                   </Text>
 
                   <View style={styles.billingStatusContainer}>
@@ -706,48 +853,64 @@ const MySubscriptionsScreen = () => {
                 {/* Payment Buttons - Only show for active subscriptions */}
                 {shouldShowPaymentButtons && (
                   <View style={styles.paymentButtonsContainer}>
-                    <TouchableOpacity
-                      style={[
-                        styles.paymentButton,
-                        { backgroundColor: colors.primary },
-                        paymentProcessing && styles.buttonDisabled,
-                      ]}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        Alert.alert(
-                          "Confirm Payment",
-                          `Pay ${formatCurrency(currentBilling.amount_due)} for bill due on ${formatDate(
-                            currentBilling.due_date,
-                          )}?`,
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Proceed to Payment",
-                              onPress: () =>
-                                handlePayNow(currentBilling, subscription),
-                              style: "default",
-                            },
-                          ],
-                        );
+                    <Animated.View
+                      style={{
+                        borderRadius: 10,
+                        shadowColor: colors.primary,
+                        shadowOpacity: isFocusedBilling ? glowAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.3, 0.8],
+                        }) : 0.2,
+                        shadowRadius: isFocusedBilling ? 12 : 8,
+                        elevation: isFocusedBilling ? 10 : 3,
                       }}
-                      disabled={paymentProcessing || creditsPaymentProcessing}
                     >
-                      {paymentProcessing ? (
-                        <ActivityIndicator size="small" color={colors.white} />
-                      ) : (
-                        <>
-                          <Ionicons
-                            name="card-outline"
-                            size={18}
+                      <TouchableOpacity
+                        style={[
+                          styles.paymentButton,
+                          { backgroundColor: colors.primary },
+                          paymentProcessing && styles.buttonDisabled,
+                        ]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          Alert.alert(
+                            "Confirm Payment",
+                            `Pay ${formatCurrency(currentBilling.amount_due)} for bill due on ${formatDate(
+                              currentBilling.due_date,
+                            )}?`,
+                            [
+                              { text: "Cancel", style: "cancel" },
+                              {
+                                text: "Proceed to Payment",
+                                onPress: () =>
+                                  handlePayNow(currentBilling, subscription),
+                                style: "default",
+                              },
+                            ],
+                          );
+                        }}
+                        disabled={paymentProcessing || creditsPaymentProcessing}
+                      >
+                        {paymentProcessing ? (
+                          <ActivityIndicator
+                            size="small"
                             color={colors.white}
-                            style={styles.buttonIcon}
                           />
-                          <Text style={styles.buttonText}>
-                            Pay via E-Wallet / Bank
-                          </Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
+                        ) : (
+                          <>
+                            <Ionicons
+                              name="card-outline"
+                              size={18}
+                              color={colors.white}
+                              style={styles.buttonIcon}
+                            />
+                            <Text style={styles.buttonText}>
+                              Pay via E-Wallet / Bank
+                            </Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </Animated.View>
 
                     <TouchableOpacity
                       style={[
@@ -815,7 +978,7 @@ const MySubscriptionsScreen = () => {
                     </View>
                   </View>
                 )}
-              </View>
+              </Animated.View>
             )}
           </View>
 
@@ -913,7 +1076,7 @@ const MySubscriptionsScreen = () => {
             )}
           </View>
         </View>
-      </View>
+      </Animated.View>
     );
   };
 
@@ -980,16 +1143,7 @@ const MySubscriptionsScreen = () => {
           <View style={styles.imageOverlay} />
         </ImageBackground>
 
-        {/* Summary Card positioned over the image */}
-        <View style={[styles.summaryCard]}>
-          <View style={styles.summaryHeader}>
-            <View style={styles.summaryContent}>
-              <Text style={[styles.summaryTitle, { color: colors.white }]}>
-                My Subscriptions
-              </Text>
-            </View>
-          </View>
-        </View>
+       
       </View>
 
       {/* Content */}
@@ -1012,6 +1166,16 @@ const MySubscriptionsScreen = () => {
           { useNativeDriver: false },
         )}
       >
+         {/* Summary Card positioned over the image */}
+        <View style={[styles.summaryCard]}>
+          <View style={styles.summaryHeader}>
+            <View style={styles.summaryContent}>
+              <Text style={[styles.summaryTitle, { color: colors.text }]}>
+                My Subscriptions
+              </Text>
+            </View>
+          </View>
+        </View>
         {/* Subscriptions List */}
         <View style={styles.section}>
           <Text style={[styles.summarySubtitle, { color: colors.text }]}>
@@ -1103,10 +1267,10 @@ const styles = StyleSheet.create({
   summaryCard: {
     backgroundColor: "transparent",
     position: "absolute",
-    maxWidth: 200,
-    top: 205,
-    right: 175,
-    padding: 20,
+    maxWidth: 300,
+    bottom: 1045,
+    right: 140,
+    padding: 40,
     elevation: 8,
     zIndex: 10,
   },
@@ -1132,6 +1296,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 4,
     left: 5,
+    top:15,
     marginBottom: 20,
   },
   summaryStats: {
@@ -1177,6 +1342,8 @@ const styles = StyleSheet.create({
   },
   subscriptionCardContainer: {
     marginBottom: 16,
+    borderRadius: 16,
+    overflow: "hidden",
   },
   subscriptionCard: {
     borderRadius: 16,

@@ -21,6 +21,13 @@ export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(!splashShown);
   const hasNavigated = useRef(false);
 
+  useEffect(() => {
+  if (!showSplash) {
+    checkAuth();
+  }
+}, [showSplash]);
+
+
   useSessionTimeout();
 
   const checkAuth = async () => {

@@ -54,11 +54,10 @@ const Home = () => {
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
 
   useFocusEffect(
-  useCallback(() => {
-    fetchHomeData(); // this calls /api/app/home
-  }, [])
-);
-
+    useCallback(() => {
+      fetchHomeData(); // this calls /api/app/home
+    }, []),
+  );
 
   useEffect(() => {
     const loadShowAmount = async () => {
@@ -77,9 +76,9 @@ const Home = () => {
 
   useEffect(() => {
     const hasUnreadAnnouncement = announcements.some(
-      (ann) => ann.read_at === null
+      (ann) => ann.read_at === null,
     );
-    
+
     // If there are unread announcements OR unread notifications, show the red dot
     if (hasUnreadAnnouncement || unreadNotifications > 0) {
       // You might want to set this state if you have it elsewhere
@@ -210,31 +209,6 @@ const Home = () => {
       route: "/(role)/(clienttabs)/tickets",
       color: colors.secondary,
     },
-    {
-      title: "Promos",
-      icon: require("../../../../assets/icons/call.png"),
-      route: "/(role)/(promos)/promos",
-      color: colors.warning,
-    },
-    // Additional actions that will go to next row
-    {
-      title: "Internet Speed",
-      icon: require("../../../../assets/icons/call.png"),
-      route: "/(role)/(clienttabs)/speedtest",
-      color: "#4CAF50",
-    },
-    {
-      title: "Usage",
-      icon: require("../../../../assets/icons/call.png"),
-      route: "/(role)/(clienttabs)/usage",
-      color: "#9C27B0",
-    },
-    {
-      title: "Support",
-      icon: require("../../../../assets/icons/call.png"),
-      route: "/(role)/(clienttabs)/support",
-      color: "#FF5722",
-    },
   ];
 
   // Fetch all data from the single /api/app/home endpoint
@@ -262,7 +236,7 @@ const Home = () => {
             Accept: "application/json",
             "Content-Type": "application/json",
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -291,15 +265,14 @@ const Home = () => {
       setUserCredit(userCreditValue);
 
       // Extract announcements
-      const announcementsData = Array.isArray(data?.announcement) 
-        ? data.announcement 
+      const announcementsData = Array.isArray(data?.announcement)
+        ? data.announcement
         : [];
       setAnnouncements(announcementsData);
 
       // Extract and process billings data
       const billings = Array.isArray(data?.billings) ? data.billings : [];
       processBillingsData(billings);
-
     } catch (err) {
       console.error("Error fetching home data:", err);
       // For demo purposes, show mock data when API fails
@@ -319,7 +292,11 @@ const Home = () => {
     today.setHours(0, 0, 0, 0);
 
     const processedBills = billings
-      .filter((bill) => ["unpaid", "pending", "open"].includes(bill.status?.toLowerCase() || ""))
+      .filter((bill) =>
+        ["unpaid", "pending", "open"].includes(
+          bill.status?.toLowerCase() || "",
+        ),
+      )
       .map((bill) => {
         const dueDate = new Date(bill.due_date);
         dueDate.setHours(0, 0, 0, 0);
@@ -355,7 +332,7 @@ const Home = () => {
           priority,
           reference_number: bill.reference_number,
           // Include other billing details if needed
-          ...bill
+          ...bill,
         };
       })
       .sort((a, b) => a.priority - b.priority);
@@ -495,7 +472,7 @@ const Home = () => {
 
   // Check if there are unread announcements
   const hasUnreadAnnouncements = announcements.some(
-    (ann) => ann.read_at === null
+    (ann) => ann.read_at === null,
   );
 
   return (
@@ -528,7 +505,7 @@ const Home = () => {
                 >
                   <View style={styles.notificationIconContainer}>
                     <Ionicons name="mail-outline" size={30} color="#fff" />
-                    
+
                     {/* Show red dot if there are unread notifications OR unread announcements */}
                     {(unreadNotifications > 0 || hasUnreadAnnouncements) && (
                       <View style={styles.redDot}>
@@ -598,6 +575,10 @@ const Home = () => {
             tintColor={colors.primary}
           />
         }
+        onScroll={Animated.event(
+                  [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                  { useNativeDriver: false },
+                )}
       >
         {/* How can we help you today? Section */}
         <View style={styles.sectionContainer}>
@@ -649,13 +630,13 @@ const Home = () => {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Promos
             </Text>
-            <TouchableOpacity
+            {/* <TouchableOpacity
               onPress={() => router.push("/(role)/(clienttabs)/home")}
             >
               <Text style={[styles.seeAllText, { color: colors.primary }]}>
                 See all
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
 
           <ScrollView
@@ -677,7 +658,8 @@ const Home = () => {
                 key={promo.id}
                 style={[styles.promoCard, { backgroundColor: colors.surface }]}
                 onPress={() =>
-                  router.push(`/(role)/(promos)/promo-details?id=${promo.id}`)
+                  // router.push(`/(role)/(promos)/promo-details?id=${promo.id}`)
+                  router.push(`/(role)/(clienttabs)/home`)
                 }
               >
                 <Image
@@ -746,7 +728,7 @@ const Home = () => {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Upcoming Bills
             </Text>
-            {upcomingBills.length > 0 && (
+            {/* {upcomingBills.length > 0 && (
               <TouchableOpacity
                 onPress={() => router.push("/(role)/(clienttabs)/billing")}
               >
@@ -754,7 +736,7 @@ const Home = () => {
                   See all
                 </Text>
               </TouchableOpacity>
-            )}
+            )} */}
           </View>
 
           {loadingBills ? (
@@ -820,7 +802,13 @@ const Home = () => {
                             key={bill.id}
                             activeOpacity={0.85}
                             onPress={() =>
-                              router.push("/(role)/(clienttabs)/subscriptions")
+                              router.push({
+                                pathname: "/(role)/(clienttabs)/subscriptions",
+                                params: {
+                                  focusSubscriptionId: bill.subscription_id,
+                                  focusBillingId: bill.id, // optional but recommended
+                                },
+                              })
                             }
                           >
                             <View
@@ -850,7 +838,8 @@ const Home = () => {
                                     ]}
                                   >
                                     Due: {formatDate(bill.due_date)}
-                                    {bill.reference_number && ` • Ref: ${bill.reference_number}`}
+                                    {bill.reference_number &&
+                                      ` • Ref: ${bill.reference_number}`}
                                   </Text>
                                 </View>
 

@@ -3,6 +3,7 @@ import {
   Text,
   FlatList,
   TouchableOpacity,
+  ActivityIndicator,
   Alert,
   StyleSheet,
   StatusBar,
@@ -15,6 +16,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../../theme/ThemeContext";
+import { useFocusEffect } from "expo-router";
+import { useCallback } from "react";
 
 export default function Notifications() {
   const router = useRouter();
@@ -71,7 +74,7 @@ export default function Notifications() {
   const [notifications, setNotifications] = useState([]);
   const [selected, setSelected] = useState([]);
   const [selectMode, setSelectMode] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
 
@@ -79,15 +82,20 @@ export default function Notifications() {
     loadNotifications();
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (notifications.length > 0) {
+        loadNotifications();
+      }
+    }, [notifications.length]),
+  );
+
   const loadNotifications = async () => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem("token");
 
-      if (!token) {
-        Alert.alert("Error", "Authentication required");
-        return;
-      }
+      if (!token) return;
 
       const res = await fetch(
         "https://staging.kazibufastnet.com/api/app/notifications",
@@ -102,21 +110,18 @@ export default function Notifications() {
       const json = await res.json();
       const fetchedNotifications = json.notifications || [];
 
-      // Mark first few as unread for demo purposes
-      const notificationsWithReadStatus = fetchedNotifications.map(
-        (notification) => ({
-          ...notification,
-          isRead: notification.is_read === 1,
-          timestamp: notification.created_at,
-        }),
-      );
+      const formatted = fetchedNotifications.map((n) => ({
+        ...n,
+        isRead: n.is_read === 1,
+        timestamp: n.created_at,
+      }));
 
-      setNotifications(notificationsWithReadStatus);
-      setHasUnread(notificationsWithReadStatus.some((n) => !n.isRead));
-      setLoading(false);
-    } catch (error) {
+      setNotifications(formatted);
+      setHasUnread(formatted.some((n) => !n.isRead));
+    } catch (e) {
       Alert.alert("Error", "Failed to load notifications");
-      setLoading(false);
+    } finally {
+      setLoading(false); // ✅ always stop loading
     }
   };
 
@@ -142,66 +147,67 @@ export default function Notifications() {
   };
 
   const deleteSelected = () => {
-  if (selected.length === 0) return;
+    if (selected.length === 0) return;
 
-  Alert.alert(
-    "Delete Notifications",
-    `Are you sure you want to delete ${selected.length} notification${selected.length !== 1 ? "s" : ""}?`,
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const token = await AsyncStorage.getItem("token");
-            if (!token) {
-              Alert.alert("Session Expired", "Please login again");
-              router.replace("/(auth)/(login)/login");
-              return;
-            }
-
-            const res = await fetch(
-              "https://staging.kazibufastnet.com/api/app/notifications/delete",
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  Accept: "application/json",
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  selected: selected, // 👈 BULK IDS
-                }),
+    Alert.alert(
+      "Delete Notifications",
+      `Are you sure you want to delete ${selected.length} notification${selected.length !== 1 ? "s" : ""}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const token = await AsyncStorage.getItem("token");
+              if (!token) {
+                Alert.alert("Session Expired", "Please login again");
+                router.replace("/(auth)/(login)/login");
+                return;
               }
-            );
 
-            if (!res.ok) {
-              const text = await res.text();
-              throw new Error(text);
+              const res = await fetch(
+                "https://staging.kazibufastnet.com/api/app/notifications/delete",
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    selected: selected, // 👈 BULK IDS
+                  }),
+                },
+              );
+
+              if (!res.ok) {
+                const text = await res.text();
+                throw new Error(text);
+              }
+
+              // ✅ UPDATE UI IMMEDIATELY
+              setNotifications((prev) =>
+                prev.filter((n) => !selected.includes(n.id)),
+              );
+
+              clearSelection();
+
+              loadNotifications();
+
+              Alert.alert(
+                "Success",
+                `${selected.length} notification${selected.length !== 1 ? "s" : ""} deleted`,
+              );
+            } catch (error) {
+              console.error("Delete notifications error:", error);
+              Alert.alert("Error", "Failed to delete notifications");
             }
-
-            // ✅ UPDATE UI IMMEDIATELY
-            setNotifications((prev) =>
-              prev.filter((n) => !selected.includes(n.id))
-            );
-
-            clearSelection();
-
-            Alert.alert(
-              "Success",
-              `${selected.length} notification${selected.length !== 1 ? "s" : ""} deleted`
-            );
-          } catch (error) {
-            console.error("Delete notifications error:", error);
-            Alert.alert("Error", "Failed to delete notifications");
-          }
+          },
         },
-      },
-    ]
-  );
-};
-
+      ],
+    );
+  };
 
   const markAsRead = (id) => {
     setNotifications((prev) =>
@@ -213,49 +219,43 @@ export default function Notifications() {
     );
   };
 
- const markAllAsRead = async () => {
-  try {
-    const token = await AsyncStorage.getItem("token");
-    if (!token) {
-      Alert.alert("Session Expired", "Please login again");
-      router.replace("/(auth)/(login)/login");
-      return;
-    }
-
-    const res = await fetch(
-      "https://staging.kazibufastnet.com/api/app/notifications/marked_all_as_red",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-          "Content-Type": "application/json", // ✅ REQUIRED
-        },
-        body: JSON.stringify({
-          selected: notifications.map(n => n.id), // ✅ SEND ALL IDS
-        }),
+  const markAllAsRead = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      if (!token) {
+        Alert.alert("Session Expired", "Please login again");
+        router.replace("/(auth)/(login)/login");
+        return;
       }
-    );
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text);
+      const res = await fetch(
+        "https://staging.kazibufastnet.com/api/app/notifications/marked_all_as_red",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+            "Content-Type": "application/json", // ✅ REQUIRED
+          },
+          body: JSON.stringify({
+            selected: notifications.map((n) => n.id), // ✅ SEND ALL IDS
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text);
+      }
+
+      // ✅ UPDATE UI IMMEDIATELY
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setHasUnread(false);
+    } catch (error) {
+      console.error("Mark all as read error:", error);
+      Alert.alert("Error", "Failed to mark all as read");
     }
-
-    // ✅ UPDATE UI IMMEDIATELY
-    setNotifications(prev =>
-      prev.map(n => ({ ...n, isRead: true }))
-    );
-    setHasUnread(false);
-
-  } catch (error) {
-    console.error("Mark all as read error:", error);
-    Alert.alert("Error", "Failed to mark all as read");
-  }
-};
-
-
-
+  };
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -317,23 +317,20 @@ export default function Notifications() {
           }
         }}
         onLongPress={() => {
-          if (!selectMode) {
-            setSelectMode(true);
-          }
+          if (!selectMode) setSelectMode(true);
           toggleSelect(item.id);
         }}
+        activeOpacity={0.8}
         style={[
-          styles.notificationItem,
+          styles.notificationCard,
           {
             backgroundColor: isSelected
               ? colors.primary + "20"
               : item.isRead
                 ? colors.notificationRead
                 : colors.notificationUnread,
-            borderBottomColor: colors.border,
           },
         ]}
-        activeOpacity={0.7}
       >
         <View style={styles.notificationContent}>
           <View style={styles.notificationHeader}>
@@ -519,22 +516,36 @@ export default function Notifications() {
       )}
 
       {/* LIST */}
-      <FlatList
-        data={notifications}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderNotificationItem}
-        ListEmptyComponent={renderEmptyState}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[effectiveMode === "dark" ? colors.white : colors.primary]}
-            tintColor={effectiveMode === "dark" ? colors.white : colors.primary}
-            titleColor={colors.textLight}
-          />
-        }
-        contentContainerStyle={notifications.length === 0 ? { flex: 1 } : null}
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ color: colors.textLight, marginTop: 12 }}>
+            Loading notifications…
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={notifications}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderNotificationItem}
+          ListEmptyComponent={renderEmptyState}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[
+                effectiveMode === "dark" ? colors.white : colors.primary,
+              ]}
+              tintColor={
+                effectiveMode === "dark" ? colors.white : colors.primary
+              }
+            />
+          }
+          contentContainerStyle={
+            notifications.length === 0 ? { flex: 1 } : null
+          }
+        />
+      )}
     </View>
   );
 }
@@ -543,6 +554,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   header: {
     paddingTop: Platform.OS === "ios" ? 50 : 40,
     paddingBottom: 16,
@@ -625,6 +642,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+  notificationCard: {
+    flexDirection: "row",
+    padding: 16,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 14,
+
+    // iOS shadow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+
+    // Android shadow
+    elevation: 3,
+  },
+
   unreadDot: {
     width: 8,
     height: 8,

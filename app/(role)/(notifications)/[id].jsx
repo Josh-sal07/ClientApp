@@ -122,34 +122,59 @@ export default function NotificationDetail() {
 
   // 🗑️ DELETE (FRONTEND ONLY)
   const deleteNotification = () => {
-    Alert.alert(
-      "Delete Notification",
-      "Are you sure you want to delete this notification? This action cannot be undone.",
-      [
-        { 
-          text: "Cancel", 
-          style: "cancel" 
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            setIsDeleting(true);
-            try {
-              // Here you could also call API to delete from server if needed
-              await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
-              router.back();
-              Alert.alert("Success", "Notification deleted successfully");
-            } catch (error) {
-              Alert.alert("Error", "Failed to delete notification");
-            } finally {
-              setIsDeleting(false);
+  Alert.alert(
+    "Delete Notification",
+    "Are you sure you want to delete this notification?",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          setIsDeleting(true);
+          try {
+            const token = await AsyncStorage.getItem("token");
+            if (!token) {
+              Alert.alert("Session Expired", "Please login again");
+              router.replace("/(auth)/(login)/login");
+              return;
             }
-          },
+
+            const res = await fetch(
+              "https://staging.kazibufastnet.com/api/app/notifications/delete",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  Accept: "application/json",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  selected: [id], // ✅ SINGLE ID
+                }),
+              }
+            );
+
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(text);
+            }
+
+            Alert.alert("Deleted", "Notification removed");
+            router.back(); // 👈 list will refresh or already filtered
+
+          } catch (error) {
+            console.error("Delete notification error:", error);
+            Alert.alert("Error", "Failed to delete notification");
+          } finally {
+            setIsDeleting(false);
+          }
         },
-      ],
-    );
-  };
+      },
+    ]
+  );
+};
+
 
   // Format date nicely
   const formatDate = (dateString) => {
