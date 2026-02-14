@@ -2,10 +2,10 @@
   "expo": {
     "scheme": "kazibufasapp",
     "name": "KazibufastApp",
-    "slug": "kazibufast-clientside",
+    "slug": "subscribers-application",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/kazi.png",
+    "icon": "./assets/images/logokazbu.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -17,30 +17,32 @@
       "supportsTablet": true
     },
     "android": {
-       "permissions": [
-      "READ_MEDIA_IMAGES",
-      "READ_MEDIA_VIDEO",
-       "READ_EXTERNAL_STORAGE",
-    "WRITE_EXTERNAL_STORAGE"
-    ],
+      "permissions": [
+        "INTERNET",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/kazi.png",
+        "foregroundImage": "./assets/images/logokazbu.png",
         "backgroundColor": "#21C7B9"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.joshuasalabe.kazibufastclientside"
     },
     "web": {
-      "favicon": "./assets/images/kazi.png"
+      "favicon": "./assets/images/logokazbu.png"
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "78fb0540-e57f-4a81-9953-47bd4dc31d19"
+        "projectId": "627c5303-73a7-4717-8dd1-fcf2cb3aadf1"
       }
     },
     "owner": "joshuasalabe"

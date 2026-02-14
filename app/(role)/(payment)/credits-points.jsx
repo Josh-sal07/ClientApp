@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useUserStore } from "../../../store/user";
 import { Asset } from "expo-asset";
 import {
-  PermissionsAndroid,
   View,
   Text,
   TextInput,
@@ -23,7 +22,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeContext";
 import { useColorScheme } from "react-native";
 import * as Print from "expo-print";
-import { File, Directory } from "expo-file-system";
+import { FileSystem } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
 const { width, height } = Dimensions.get("window");
@@ -52,7 +51,6 @@ const CreditsPointsPayment = () => {
       success: "#00AFA1",
       warning: "#FFA726",
       danger: "#FF6B6B",
-      facebook: "#1877F2",
       surface: "#FFFFFF",
       background: "#F5F8FA",
       text: "#1E293B",
@@ -75,7 +73,6 @@ const CreditsPointsPayment = () => {
       success: "#00AFA1",
       warning: "#FFA726",
       danger: "#FF6B6B",
-      facebook: "#1877F2",
       surface: "#1E1E1E",
       background: "#121212",
       text: "#FFFFFF",
@@ -95,10 +92,7 @@ const CreditsPointsPayment = () => {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
-  const [subscriptionDetails, setSubscriptionDetails] = useState(null);
   const [selectedBill, setSelectedBill] = useState(null);
-  const [loadingDetails, setLoadingDetails] = useState(true);
-  const [currentUser, setCurrentUser] = useState(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
@@ -106,25 +100,44 @@ const CreditsPointsPayment = () => {
 
   // Get parameters from navigation
   const billingId = params.billingId;
-  const subscriptionId = params.subscriptionId;
   const billDetailsParam = params.billDetails;
 
   useEffect(() => {
-    // Try to parse bill details from params first
+    console.log("Component mounted with params:", {
+      billingId,
+      hasBillDetails: !!billDetailsParam,
+      userExists: !!user,
+      userCreditPoints: user?.credit_points,
+      branchExists: !!user?.branch,
+      subdomain: user?.branch?.subdomain,
+      domain: user?.branch?.domain,
+    });
+
+    // First, try to use bill details from params immediately
     if (billDetailsParam) {
       try {
         const parsedBill = JSON.parse(billDetailsParam);
+        console.log("Successfully parsed bill from params");
         setSelectedBill(parsedBill);
-        setLoadingDetails(false);
+
+        // Get credits from user store if available
+        if (user?.credit_points !== undefined) {
+          console.log("Using credits from user store:", user.credit_points);
+          setAvailableCredits(parseFloat(user.credit_points) || 0);
+        } else {
+          console.log("No credits found in user store, fetching from API");
+          fetchCredits();
+        }
+
+        setLoading(false);
       } catch (error) {
-        fetchSubscriptionDetails();
+        console.error("Error parsing bill details from params:", error);
+        // If parsing fails, try to fetch from API
+        fetchAllData();
       }
     } else {
-      fetchSubscriptionDetails();
+      fetchAllData();
     }
-
-    fetchAvailableCredits();
-    fetchCurrentUser();
   }, []);
 
   const getToken = async () => {
@@ -136,259 +149,246 @@ const CreditsPointsPayment = () => {
     }
   };
 
-  // Fetch current user info
-  const fetchCurrentUser = async () => {
-    try {
-      const token = await getToken();
-      if (!token) return;
-
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/user`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        },
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setCurrentUser(data);
-      }
-    } catch (error) {
+  // Get the subdomain from user branch
+  const getSubdomain = () => {
+    if (!user || !user.branch) {
+      console.log("User or branch is null");
+      return "staging"; // Fallback to staging
     }
+
+    // Try different possible field names
+    const subdomain = user.branch.subdomain || user.branch.domain || "staging";
+    console.log("Using subdomain:", subdomain);
+    return subdomain;
   };
 
-  // Fetch subscription details and find the specific bill
-  const fetchSubscriptionDetails = async () => {
-    try {
-      setLoadingDetails(true);
-      const token = await getToken();
-      if (!token) throw new Error("No token found");
-
-      // Try direct billing endpoint first
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/billings/${billingId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        },
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-
-        if (data.billing || data.data) {
-          const bill = data.billing || data.data;
-          setSelectedBill(bill);
-
-          // Try to get subscription info if available
-          if (bill.subscription_id) {
-            fetchSubscriptionInfo(bill.subscription_id);
-          }
-          return;
-        }
-      }
-
-      const subscriptionsResponse = await fetch(
-        `https://staging.kazibufastnet.com/api/app/subscriptions`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        },
-      );
-
-      const subscriptionsData = await subscriptionsResponse.json();
-
-      if (subscriptionsResponse.ok) {
-        let foundBill = null;
-        let foundSubscription = null;
-
-        // Process subscriptions data
-        let subscriptions = [];
-        if (Array.isArray(subscriptionsData)) {
-          subscriptions = subscriptionsData;
-        } else if (subscriptionsData.subscription) {
-          subscriptions = Array.isArray(subscriptionsData.subscription)
-            ? subscriptionsData.subscription
-            : [subscriptionsData.subscription];
-        } else if (
-          subscriptionsData.data &&
-          Array.isArray(subscriptionsData.data)
-        ) {
-          subscriptions = subscriptionsData.data;
-        }
-
-        // Find the bill with matching billingId
-        for (const subscription of subscriptions) {
-          if (subscription.billing && Array.isArray(subscription.billing)) {
-            const bill = subscription.billing.find(
-              (b) => b.id == billingId || b.billing_id == billingId,
-            );
-            if (bill) {
-              foundBill = bill;
-              foundSubscription = subscription;
-              break;
-            }
-          }
-        }
-
-        if (foundBill && foundSubscription) {
-          setSelectedBill(foundBill);
-          setSubscriptionDetails(foundSubscription);
-        } else {
-          // Try one more endpoint - the view endpoint
-          try {
-            const viewResponse = await fetch(
-              `https://staging.kazibufastnet.com/api/app/billings/view/${billingId}`,
-              {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  Accept: "application/json",
-                },
-              },
-            );
-
-            if (viewResponse.ok) {
-              const viewData = await viewResponse.json();
-
-              if (viewData.billing) {
-                // Create a new object with billing data PLUS address/contact
-                const completeBillData = {
-                  ...viewData.billing,
-                  address: viewData.address,
-                  contactNumber: viewData.contactNumber,
-                };
-
-                setSelectedBill(completeBillData);
-              } else if (viewData.data) {
-                // Handle if response uses 'data' instead of 'billing'
-                const completeBillData = {
-                  ...viewData.data,
-                  address: viewData.address,
-                  contactNumber: viewData.contactNumber,
-                };
-
-                setSelectedBill(completeBillData);
-              }
-            }
-          } catch (viewError) {
-          }
-        }
-      } else {
-        throw new Error("Failed to load subscriptions");
-      }
-    } catch (error) {
-      Alert.alert(
-        "Error",
-        "Failed to load billing details. Please go back and try again.",
-      );
-    } finally {
-      setLoadingDetails(false);
-    }
-  };
-
-  // Fetch subscription info for display
-  const fetchSubscriptionInfo = async (subId) => {
+  // Fetch credits from user store or API
+  const fetchCredits = async () => {
     try {
       const token = await getToken();
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/subscriptions/view/${subscriptionId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        },
-      );
 
-      if (response.ok) {
-        const data = await response.json();
-        setSubscriptionDetails(data.subscription || data.data || data);
-      }
-    } catch (error) {
-    }
-  };
-
-  // Fetch user's available credits
-  const fetchAvailableCredits = async () => {
-    try {
-      const token = await getToken();
       if (!token) {
-        throw new Error("No authentication token found");
+        console.log("No token found");
+        return;
       }
 
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/credit_points`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
+      const subdomain = getSubdomain();
+      const url = `https://${subdomain}.kazibufastnet.com/api/app/credit_points`;
+
+      console.log("Fetching credits from:", url);
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
         },
-      );
+      });
 
-      if (!response.ok) {
-        const errorText = await response.text();
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Credits response:", data);
 
-        let errorMessage = `Failed to fetch credits: ${response.status}`;
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.message) {
-            errorMessage = errorData.message;
-          }
-        } catch (e) {
-          if (errorText && errorText.length < 100) {
-            errorMessage = errorText;
-          }
+        let credits = 0;
+        if (data.credit_points !== undefined) {
+          credits = parseFloat(data.credit_points) || 0;
+        } else if (data.credits_balance !== undefined) {
+          credits = parseFloat(data.credits_balance) || 0;
+        } else if (data.credits !== undefined) {
+          credits = parseFloat(data.credits) || 0;
+        } else if (data.balance !== undefined) {
+          credits = parseFloat(data.balance) || 0;
+        } else if (data.data?.credit_points !== undefined) {
+          credits = parseFloat(data.data.credit_points) || 0;
         }
 
-        throw new Error(errorMessage);
+        console.log("Setting available credits:", credits);
+        setAvailableCredits(credits);
       }
-
-      const responseText = await response.text();
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        throw new Error("Invalid server response format");
-      }
-
-      // Parse the response
-      let credits = 0;
-
-      if (data.credit_points !== undefined) {
-        credits = parseFloat(data.credit_points) || 0;
-      } else if (data.credits_balance !== undefined) {
-        credits = parseFloat(data.credits_balance) || 0;
-      } else if (data.credits !== undefined) {
-        credits = parseFloat(data.credits) || 0;
-      } else if (data.balance !== undefined) {
-        credits = parseFloat(data.balance) || 0;
-      } else if (data.data && data.data.credit_points !== undefined) {
-        credits = parseFloat(data.data.credit_points) || 0;
-      }
-      setAvailableCredits(credits);
     } catch (error) {
-      setAvailableCredits(0);
-      if (!error.message.includes("Network request failed")) {
-        Alert.alert(
-          "Error",
-          error.message || "Failed to load credits balance. Please try again.",
-        );
-      }
-    } finally {
-      setLoading(false);
+      console.error("Error fetching credits:", error);
     }
   };
+
+  // Fetch all data
+const fetchAllData = async () => {
+  console.log("Starting to fetch all data...");
+
+  try {
+    const token = await getToken();
+
+    if (!token) {
+      console.log("No token found");
+      setLoading(false);
+      Alert.alert("Error", "Please log in to continue.");
+      return;
+    }
+
+    const subdomain = getSubdomain();
+    if (!subdomain) {
+      console.log("No subdomain found, using staging");
+      setLoading(false);
+      Alert.alert("Error", "Unable to determine server location.");
+      return;
+    }
+
+    if (!billingId) {
+      console.log("No billing ID provided");
+      setLoading(false);
+      Alert.alert("Error", "Billing ID is required.");
+      return;
+    }
+
+    const url = `https://${subdomain}.kazibufastnet.com/api/app/billings/pay-with-credits/${billingId}`;
+    console.log("Fetching bill details from:", url);
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+
+    console.log("Response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log("Error response:", errorText);
+      throw new Error(
+        `HTTP ${response.status}: Failed to fetch bill details`,
+      );
+    }
+
+    const responseText = await response.text();
+    console.log("Response received");
+
+    const data = JSON.parse(responseText);
+    console.log("Parsed response data:", data);
+
+    // Extract bill data from response
+    let billData = null;
+
+    if (data.billing) {
+      billData = data.billing;
+    } else if (data.data) {
+      billData = data.data;
+    } else if (data) {
+      billData = data;
+    }
+
+    // EXTRACT ADDRESS AND CONTACT FROM THE RESPONSE STRUCTURE
+    let address = "Address not available";
+    let contactNumber = "Contact not available";
+    
+    // Address is in data.address.value
+    if (data.address && data.address.value) {
+      address = data.address.value;
+      console.log("Found address in data.address.value:", address);
+    }
+    
+    // Contact number is in data.contactNumber.value
+    if (data.contactNumber && data.contactNumber.value) {
+      contactNumber = data.contactNumber.value;
+      console.log("Found contact in data.contactNumber.value:", contactNumber);
+    }
+    
+    // Fallback: check if address/contact are directly in data
+    if (data.address && typeof data.address === 'string') {
+      address = data.address;
+    }
+    if (data.contactNumber && typeof data.contactNumber === 'string') {
+      contactNumber = data.contactNumber;
+    }
+    
+    // Fallback: user's address if available
+    if (address === "Address not available" && data.user?.address) {
+      address = data.user.address;
+    }
+    if (contactNumber === "Contact not available" && data.user?.mobile_number) {
+      contactNumber = data.user.mobile_number;
+    }
+
+    // Add the address and contact to billData
+    if (billData) {
+      billData.address = address;
+      billData.contactNumber = contactNumber;
+      console.log("Added address/contact to billData:", {
+        address: billData.address,
+        contactNumber: billData.contactNumber
+      });
+    } else {
+      // Create billData if none exists
+      billData = {
+        address: address,
+        contactNumber: contactNumber
+      };
+    }
+
+    // Extract available credits from response
+    let credits = 0;
+    if (data.credit_points !== undefined) {
+      credits = parseFloat(data.credit_points) || 0;
+    } else if (data.credits_balance !== undefined) {
+      credits = parseFloat(data.credits_balance) || 0;
+    } else if (data.credits !== undefined) {
+      credits = parseFloat(data.credits) || 0;
+    } else if (data.balance !== undefined) {
+      credits = parseFloat(data.balance) || 0;
+    } else if (data.data?.credit_points !== undefined) {
+      credits = parseFloat(data.data.credit_points) || 0;
+    } else if (user?.credit_points !== undefined) {
+      credits = parseFloat(user.credit_points) || 0;
+    }
+
+    console.log("Setting bill data and credits:", {
+      address: billData.address,
+      contactNumber: billData.contactNumber,
+      credits: credits
+    });
+    
+    setSelectedBill(billData);
+    setAvailableCredits(credits);
+    
+  } catch (error) {
+    console.error("Error in fetchAllData:", error);
+
+    // If we have billDetailsParam as fallback, use it
+    if (billDetailsParam) {
+      try {
+        const parsedBill = JSON.parse(billDetailsParam);
+        console.log("Using fallback bill data from params");
+        
+        // Check if address/contact are in the parsed bill
+        if (!parsedBill.address && parsedBill.addressObject?.value) {
+          parsedBill.address = parsedBill.addressObject.value;
+        }
+        if (!parsedBill.contactNumber && parsedBill.contactNumberObject?.value) {
+          parsedBill.contactNumber = parsedBill.contactNumberObject.value;
+        }
+        
+        setSelectedBill(parsedBill);
+
+        // Try to get credits from user store
+        if (user?.credit_points !== undefined) {
+          setAvailableCredits(parseFloat(user.credit_points) || 0);
+        }
+      } catch (parseError) {
+        console.error("Could not parse fallback bill details:", parseError);
+      }
+    }
+
+    Alert.alert(
+      "Warning",
+      "Could not fetch latest bill details. Using cached data.",
+    );
+  } finally {
+    console.log("Setting loading to false");
+    setLoading(false);
+  }
+};
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -435,7 +435,12 @@ const CreditsPointsPayment = () => {
     const discount = parseFloat(selectedBill.discount || 0);
     const available = parseFloat(availableCredits) || 0;
 
-    return parseFloat((totalDue + penalty - discount).toFixed(2));
+    const maxBillAmount = parseFloat(
+      (totalDue + penalty - discount).toFixed(2),
+    );
+    const maxByCredits = available;
+
+    return Math.min(maxBillAmount, maxByCredits);
   };
 
   const calculateTotalAmountDue = () => {
@@ -448,9 +453,14 @@ const CreditsPointsPayment = () => {
       return parseFloat(selectedBill.amount_due) || 0;
     }
 
-    const previousBalance = parseFloat(selectedBill.previous_balance || 0);
+    const previousBalance = parseFloat(
+      selectedBill.previous_balance || selectedBill.prev_balance || 0,
+    );
     const currentCharges = parseFloat(
-      selectedBill.current_charges || selectedBill.amount || 0,
+      selectedBill.current_charges ||
+        selectedBill.amount ||
+        selectedBill.original_amount ||
+        0,
     );
     const penalty = parseFloat(selectedBill.penalty || 0);
     const discount = parseFloat(selectedBill.discount || 0);
@@ -502,10 +512,8 @@ const CreditsPointsPayment = () => {
   const handleUseFullAmount = () => {
     const maxAmount = Number(getMaxPaymentAmount() || 0);
 
-    const total = maxAmount;
-
-    if (total > 0) {
-      setAmount(total.toFixed(2));
+    if (maxAmount > 0) {
+      setAmount(maxAmount.toFixed(2));
       setPaymentError("");
     } else {
       setPaymentError("No amount available to pay");
@@ -513,322 +521,201 @@ const CreditsPointsPayment = () => {
   };
 
   // Generate receipt data
-  const generateReceiptData = async (paymentResult, paymentAmount) => {
-    const now = new Date();
+// Generate receipt data
+const generateReceiptData = async (paymentResult, paymentAmount) => {
+  const now = new Date();
 
-    const receiptNumber = `RCP-${now.getFullYear()}${(now.getMonth() + 1)
-      .toString()
-      .padStart(
-        2,
-        "0",
-      )}${now.getDate().toString().padStart(2, "0")}-${Math.floor(
-      Math.random() * 10000,
-    )
-      .toString()
-      .padStart(4, "0")}`;
+  const receiptNumber = `RCP-${now.getFullYear()}${(now.getMonth() + 1)
+    .toString()
+    .padStart(2, "0")}${now.getDate().toString().padStart(2, "0")}-${Math.floor(
+    Math.random() * 10000
+  )
+    .toString()
+    .padStart(4, "0")}`;
 
-    const base64Logo = await getBase64Logo();
+  const base64Logo = await getBase64Logo();
 
-    // FETCH ADDRESS/CONTACT NOW if missing
-    let address = selectedBill?.address;
-    let contactNumber = selectedBill?.contactNumber;
-
-    if (!address || !contactNumber) {
-      try {
-        const token = await getToken();
-        if (token) {
-          const response = await fetch(
-            `https://staging.kazibufastnet.com/api/app/billings/view/${billingId}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "application/json",
-              },
-            },
-          );
-
-          if (response.ok) {
-            const data = await response.json();
-            address = data.address || "N/A";
-            contactNumber = data.contactNumber || "N/A";
-
-            // Update selectedBill for future use
-            setSelectedBill((prev) => ({
-              ...prev,
-              address,
-              contactNumber,
-            }));
-          }
-        }
-      } catch (error) {
-      }
-    }
-
-    const receipt = {
-      receiptNumber: receiptNumber,
-      date: now.toISOString(),
-      paymentDate: formatDate(now.toISOString()),
-      transactionDate: formatDate(now.toISOString()),
-      accountNumber: selectedBill?.reference_number || "N/A",
-      customerName: user?.name || "N/A",
-      plan:
-        subscriptionDetails?.plan?.name || selectedBill?.plan?.name || "N/A",
-      dueDate: formatDate(selectedBill?.due_date || "N/A"),
-      paymentMethod: "Credits Points",
-      previousBalance: selectedBill?.prev_balance || 0,
-      currentCharges: selectedBill?.original_amount || 0,
-      totalDue: selectedBill?.amount_due || 0,
-      discount: selectedBill?.discount || 0,
-      penalty: selectedBill?.penalty || 0,
-      paymentAmount: paymentAmount,
-      paymentStatus: "PAID",
-      companyName: "KAZIBUFAST NETWORKS",
-      companyAddress: address || "N/A",
-      companyPhone: contactNumber || "N/A",
-      logo: base64Logo,
-    };
-
-    return receipt;
-  };
+  // Get address and contact
+  let address = "Address not available";
+  let contactNumber = "Contact not available";
   
-const getBase64Logo = async () => {
-  const asset = Asset.fromModule(
-    require("../../../assets/images/logo.png")
-  );
+  console.log("generateReceiptData - Checking data sources...");
+  
+  // Priority 1: Check selectedBill (which now has address/contact from fetchAllData)
+  if (selectedBill?.address && selectedBill.address !== "Address not available") {
+    address = selectedBill.address;
+    console.log("Found address in selectedBill.address:", address);
+  }
+  
+  if (selectedBill?.contactNumber && selectedBill.contactNumber !== "Contact not available") {
+    contactNumber = selectedBill.contactNumber;
+    console.log("Found contact in selectedBill.contactNumber:", contactNumber);
+  }
+  
+  // Priority 2: Check paymentResult (API response after payment)
+  if (paymentResult) {
+    if (paymentResult.address?.value && address === "Address not available") {
+      address = paymentResult.address.value;
+    } else if (paymentResult.address && typeof paymentResult.address === 'string' && address === "Address not available") {
+      address = paymentResult.address;
+    }
+    
+    if (paymentResult.contactNumber?.value && contactNumber === "Contact not available") {
+      contactNumber = paymentResult.contactNumber.value;
+    } else if (paymentResult.contactNumber && typeof paymentResult.contactNumber === 'string' && contactNumber === "Contact not available") {
+      contactNumber = paymentResult.contactNumber;
+    }
+  }
+  
+  // Priority 3: User data as fallback
+  if (address === "Address not available" && user?.address) {
+    address = user.address;
+  }
+  if (contactNumber === "Contact not available" && user?.mobile_number) {
+    contactNumber = user.mobile_number;
+  }
+  
+  // Hardcoded fallback
+  if (address === "Address not available") {
+    address = "Purok 6 Brgy. Guiwanon, Tubigon";
+  }
+  if (contactNumber === "Contact not available") {
+    contactNumber = "09505358971";
+  }
 
-  await asset.downloadAsync();
-
-  const response = await fetch(asset.uri);
-  const blob = await response.blob();
-
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      // reader.result is base64 data URL
-      resolve(reader.result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
+  console.log("Receipt generation - Final values:", {
+    address,
+    contactNumber,
+    hasSelectedBill: !!selectedBill
   });
+
+  const receipt = {
+    receiptNumber: receiptNumber,
+    date: now.toISOString(),
+    paymentDate: formatDate(now.toISOString()),
+    transactionDate: formatDate(now.toISOString()),
+    accountNumber: selectedBill?.reference_number || selectedBill?.id || "N/A",
+    customerName: user?.name || "N/A",
+    plan: selectedBill?.plan?.name || "N/A",
+    dueDate: formatDate(selectedBill?.due_date || "N/A"),
+    paymentMethod: "Credits Points",
+    previousBalance: selectedBill?.previous_balance || selectedBill?.prev_balance || 0,
+    currentCharges: selectedBill?.current_charges ||
+                    selectedBill?.original_amount ||
+                    selectedBill?.amount ||
+                    0,
+    totalDue: selectedBill?.amount_due || 0,
+    discount: selectedBill?.discount || 0,
+    penalty: selectedBill?.penalty || 0,
+    paymentAmount: paymentAmount,
+    paymentStatus: "PAID",
+    companyName: "KAZIBUFAST NETWORKS",
+    companyAddress: address,
+    companyPhone: contactNumber,
+    logo: base64Logo,
+  };
+
+  return receipt;
 };
 
+  const getBase64Logo = async () => {
+    try {
+      const asset = Asset.fromModule(
+        require("../../../assets/images/logo.png"),
+      );
+      await asset.downloadAsync();
 
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error("Error loading logo:", error);
+      return "";
+    }
+  };
 
   // Generate HTML for receipt
   const generateReceiptHTML = (receipt, base64Logo) => {
-    // Helper function to format currency
     const formatCurrency = (amount) => {
       if (amount === undefined || amount === null) return "0.00";
       return parseFloat(amount).toFixed(2);
     };
-    const receiptPlan =
-      subscriptionDetails?.plan?.name || selectedBill?.plan?.name || "N/A";
 
     return `
-   <!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Payment Receipt - ${receipt.paymentDate || "N/A"}</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #ffffff;
-      color: #000000;
-      padding: 20px;
-    }
-
-    .receipt-container {
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      margin-bottom: 20px;
-    }
-
-    .logo {
-      width: 90px;
-      height: 90px;
-      border-radius: 50%;
-      overflow: hidden;
-    }
-
-    .logo img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .company-details {
-      text-align: center;
-    }
-
-    .company-name {
-      font-size: 20px;
-      font-weight: bold;
-      text-transform: uppercase;
-    }
-
-    .company-info {
-      font-size: 14px;
-      color: #333;
-      margin-top: 5px;
-    }
-
-    .title {
-      text-align: center;
-      font-size: 20px;
-      font-weight: bold;
-      margin-bottom: 20px;
-      text-transform: capitalize;
-    }
-
-    .table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    .table td {
-      border: 1px solid #ddd;
-      padding: 8px;
-      font-size: 14px;
-    }
-
-    .table td:first-child {
-      font-weight: bold;
-      width: 40%;
-    }
-
-    .table td:last-child {
-      text-align: left;
-      width: 60%;
-    }
-
-    .paid-row td {
-      font-weight: bold;
-      font-size: 16px;
-      padding: 12px 8px;
-    }
-
-    .footer {
-      margin-top: 30px;
-      text-align: center;
-      font-size: 13px;
-      color: #666;
-      line-height: 1.5;
-    }
-
-    @media print {
-      body {
-        padding: 10px;
-      }
-    }
-  </style>
-</head>
-
-<body>
-  <div class="receipt-container">
-    <div class="header">
-      <div class="logo">
-        <!-- Replace the image source with your logo -->
-        <img src="${base64Logo || receipt.logo || ""}" alt="Logo">
-      </div>
-      <div class="company-details">
-        <div class="company-name">${receipt.companyName || "N/A"}</div>
-        <div class="company-info">
-          Address: ${receipt.companyAddress || "N/A"}<br>
-          Contact No: ${receipt.companyPhone || "N/A"}
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Payment Receipt - ${receipt.paymentDate || "N/A"}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background-color: #ffffff; color: #000000; padding: 20px; }
+        .receipt-container { max-width: 900px; margin: 0 auto; }
+        .header { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 20px; }
+        .logo { width: 90px; height: 90px; border-radius: 50%; overflow: hidden; }
+        .logo img { width: 100%; height: 100%; object-fit: cover; }
+        .company-details { text-align: center; }
+        .company-name { font-size: 20px; font-weight: bold; text-transform: uppercase; }
+        .company-info { font-size: 14px; color: #333; margin-top: 5px; }
+        .title { text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 20px; text-transform: capitalize; }
+        .table { width: 100%; border-collapse: collapse; }
+        .table td { border: 1px solid #ddd; padding: 8px; font-size: 14px; }
+        .table td:first-child { font-weight: bold; width: 40%; }
+        .table td:last-child { text-align: left; width: 60%; }
+        .paid-row td { font-weight: bold; font-size: 16px; padding: 12px 8px; }
+        @media print { body { padding: 10px; } }
+      </style>
+    </head>
+    <body>
+      <div class="receipt-container">
+        <div class="header">
+          <div class="logo">
+            <img src="${base64Logo || receipt.logo || ""}" alt="Logo">
+          </div>
+          <div class="company-details">
+            <div class="company-name">${receipt.companyName || "KAZIBUFAST NETWORKS"}</div>
+            <div class="company-info">
+              Address: ${receipt.companyAddress || "N/A"}<br>
+              Contact No: ${receipt.companyPhone || "N/A"}
+            </div>
+          </div>
         </div>
+        <div class="title">Payment Details</div>
+        <table class="table">
+          <tr><td>Account Number:</td><td>${receipt.accountNumber}</td></tr>
+          <tr><td>Account Name:</td><td>${receipt.customerName}</td></tr>
+          <tr><td>Plan:</td><td>${receipt.plan}</td></tr>
+          <tr><td>Due Date:</td><td>${receipt.dueDate}</td></tr>
+          <tr><td>Payment Mode:</td><td>${receipt.paymentMethod}</td></tr>
+          <tr><td>Payment Date:</td><td>${receipt.paymentDate}</td></tr>
+          <tr><td>Previous Balance:</td><td>${formatCurrency(receipt.previousBalance)}</td></tr>
+          <tr><td>Current Charges:</td><td>${formatCurrency(receipt.currentCharges)}</td></tr>
+          <tr><td>Total Amount Due:</td><td>${formatCurrency(receipt.totalDue)}</td></tr>
+          <tr><td>Discount:</td><td>${formatCurrency(receipt.discount)}</td></tr>
+          <tr><td>Penalty:</td><td>${formatCurrency(receipt.penalty)}</td></tr>
+          <tr class="paid-row"><td>Paid Amount:</td><td>${formatCurrency(receipt.paymentAmount)}</td></tr>
+        </table>
       </div>
-    </div>
-
-    <div class="title">Payment Details</div>
-
-    <table class="table">
-      <tr>
-        <td>Account Number:</td>
-        <td>${selectedBill?.reference_number || "N/A"}</td>
-      </tr>
-      <tr>
-        <td>Account Name:</td>
-        <td>${receipt.customerName || "N/A"}</td>
-      </tr>
-      <tr>
-        <td>Plan:</td>
-        <td>${receiptPlan || "N/A"}</td>
-      </tr>
-      <tr>
-        <td>Due Date:</td>
-        <td>${receipt.dueDate || "N/A"}</td>
-      </tr>
-      <tr>
-        <td>Payment Mode:</td>
-        <td>${receipt.paymentMethod || "Credits Points"}</td>
-      </tr>
-      <tr>
-        <td>Payment Date:</td>
-        <td>${receipt.paymentDate || "N/A"}</td>
-      </tr>
-      <tr>
-        <td>Previous Balance:</td>
-        <td>${formatCurrency(receipt.previousBalance || 0)}</td>
-      </tr>
-      <tr>
-        <td>Current Charges:</td>
-        <td>${formatCurrency(receipt.currentCharges || 0)}</td>
-      </tr>
-      <tr>
-        <td>Total Amount Due:</td>
-        <td>${formatCurrency(receipt.totalDue || 0)}</td>
-      </tr>
-      <tr>
-        <td>Discount:</td>
-        <td>${formatCurrency(receipt.discount || 0)}</td>
-      </tr>
-      <tr>
-        <td>Penalty:</td>
-        <td>${formatCurrency(receipt.penalty || 0)}</td>
-      </tr>
-
-      <!-- Paid Amount -->
-      <tr class="paid-row">
-        <td>Paid Amount:</td>
-        <td>${formatCurrency(receipt.paymentAmount || 0)}</td>
-      </tr>
-    </table>
-  </div>
-</body>
-</html>
-
-  `;
+    </body>
+    </html>
+    `;
   };
 
   // Save receipt as PDF
   const saveReceiptAsPDF = async (receipt) => {
     try {
       setDownloadingReceipt(true);
-
       const html = generateReceiptHTML(receipt, receipt.logo);
       const { uri: pdfUri } = await Print.printToFileAsync({ html });
 
-      const fileName = `Receipt_${receipt.receiptNumber}_${
-        new Date().toISOString().split("T")[0]
-      }.pdf`;
-
-      // =========== For BOTH Android & iOS ===========
-      // Just share the PDF directly - user chooses where to save
+      const fileName = `Receipt_${receipt.receiptNumber}_${new Date().toISOString().split("T")[0]}.pdf`;
       const canShare = await Sharing.isAvailableAsync();
 
       if (canShare) {
@@ -837,20 +724,14 @@ const getBase64Logo = async () => {
           dialogTitle: `Save Receipt ${receipt.receiptNumber}`,
           UTI: "com.adobe.pdf",
         });
-
         Alert.alert(
           "Save Receipt",
           "Choose where to save your receipt:\n\n• 'Save to Files' (iOS)\n• 'Save' or 'Download' (Android)",
           [{ text: "OK" }],
         );
       } else {
-        // Fallback: Save to app's document directory
         const appDir = FileSystem.documentDirectory + fileName;
-        await FileSystem.moveAsync({
-          from: pdfUri,
-          to: appDir,
-        });
-
+        await FileSystem.moveAsync({ from: pdfUri, to: appDir });
         Alert.alert(
           "Receipt Saved",
           `File saved in app storage:\n${fileName}\n\nYou can access it via device file manager.`,
@@ -862,37 +743,6 @@ const getBase64Logo = async () => {
     } finally {
       setDownloadingReceipt(false);
     }
-  };
-
-  // Android Permission Handler (No Media Library!)
-  const requestAndroidStoragePermission = async () => {
-    if (Platform.OS !== "android") return true;
-
-    // For Android 13+ (API 33+)
-    if (Platform.Version >= 33) {
-      const permissions = [
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
-      ];
-
-      const granted = await PermissionsAndroid.requestMultiple(permissions);
-      return Object.values(granted).every(
-        (status) => status === PermissionsAndroid.RESULTS.GRANTED,
-      );
-    }
-
-    // For Android 10-12
-    const granted = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-      {
-        title: "Storage Permission",
-        message: "App needs storage access to save receipts",
-        buttonPositive: "Allow",
-        buttonNegative: "Deny",
-      },
-    );
-
-    return granted === PermissionsAndroid.RESULTS.GRANTED;
   };
 
   // Print receipt
@@ -954,26 +804,28 @@ const getBase64Logo = async () => {
 
   const processPayment = async (paymentAmount) => {
     try {
-
       setProcessing(true);
-
-      // Get token
       const token = await getToken();
 
       if (!token) {
         Alert.alert("Authentication Required", "Please log in to continue.", [
-          {
-            text: "Log In",
-            onPress: () => {
-              router.replace("/(auth)/login");
-            },
-          },
+          { text: "Log In", onPress: () => router.replace("/(auth)/login") },
         ]);
         return;
       }
 
-      const billIdToUse = selectedBill?.id || billingId;
+      const subdomain = getSubdomain();
+      if (!subdomain) {
+        Alert.alert("Error", "Unable to determine server location.");
+        return;
+      }
 
+      if (!billingId) {
+        Alert.alert("Error", "Billing ID not provided.");
+        return;
+      }
+
+      const url = `https://${subdomain}.kazibufastnet.com/api/app/billings/pay-with-credits/${billingId}`;
 
       const requestBody = {
         amount: Number(paymentAmount),
@@ -982,146 +834,116 @@ const getBase64Logo = async () => {
         discount: Number(selectedBill?.discount || 0),
       };
 
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/billings/pay-with-credits/${billIdToUse}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify(requestBody),
+      console.log("Processing payment to:", url);
+      console.log("Request body:", requestBody);
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
-      );
+        body: JSON.stringify(requestBody),
+      });
 
-      const responseText = await response.text();
-
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (parseError) {
-        throw new Error("Invalid server response format");
-      }
-
+      // Handle expired session
       if (response.status === 401) {
         await AsyncStorage.removeItem("token");
+        Alert.alert("Session Expired", "Please log in again.", [
+          { text: "Log In", onPress: () => router.replace("/(auth)/login") },
+        ]);
+        return;
+      }
 
+      const text = await response.text();
+      const result = JSON.parse(text);
+
+      if (!response.ok) {
+        throw new Error(result.message || "Payment failed");
+      }
+
+      // Payment successful
+      const receipt = await generateReceiptData(result, paymentAmount);
+      setReceiptData(receipt);
+
+      // Calculate new credit points
+      const newCredits = Math.max(0, availableCredits - paymentAmount);
+
+      // Update local state immediately
+      setAvailableCredits(newCredits);
+
+      // Update user store if possible
+      try {
+        // Get current user state
+        const userStore = useUserStore.getState();
+
+        if (userStore.user && userStore.user.credit_points !== undefined) {
+          const updatedUser = {
+            ...userStore.user,
+            credit_points: newCredits,
+          };
+
+          // Try different store update methods
+          if (typeof userStore.setUser === "function") {
+            userStore.setUser(updatedUser);
+          } else if (typeof userStore.updateUser === "function") {
+            userStore.updateUser(updatedUser);
+          } else if (typeof userStore.updateUserCredits === "function") {
+            userStore.updateUserCredits(newCredits);
+          }
+
+          console.log("Updated user credits in store:", {
+            old: availableCredits,
+            paid: paymentAmount,
+            new: newCredits,
+          });
+        }
+      } catch (storeError) {
+        console.log("Could not update user store:", storeError.message);
+        // This is okay - we still updated the local state
+      }
+
+      // Show success message with updated credits
+      Alert.alert(
+        "✅ Payment Successful",
+        `Your payment of ${formatCurrency(paymentAmount)} has been processed.\n\nRemaining credits: ${formatCurrency(newCredits)}`,
+        [{ text: "View Receipt", onPress: () => setShowReceipt(true) }],
+      );
+
+      // Also update the success alert in the receipt modal to show new balance
+      setTimeout(() => {
+        // Refresh data to get updated bill status from server
+        fetchAllData();
+      }, 1000);
+    } catch (error) {
+      console.log("Payment error:", error.message);
+
+      if (error.message.includes("Network request failed")) {
         Alert.alert(
-          "Session Expired",
-          "Your session has expired. Please log in again.",
-          [
-            {
-              text: "Log In",
-              onPress: () => {
-                router.replace("/(auth)/login");
-              },
-            },
-          ],
+          "Connection Error",
+          "Unable to connect to the server. Please check your internet connection and try again.",
+          [{ text: "OK" }],
         );
         return;
       }
 
-      if (response.ok) {
-        // Check for success indicators
-        const isSuccess =
-          result.success === true ||
-          result.status === "success" ||
-          result.status === "paid" ||
-          (result.message &&
-            (result.message.toLowerCase().includes("success") ||
-              result.message.toLowerCase().includes("paid") ||
-              result.message.toLowerCase().includes("processed")));
-
-        if (isSuccess) {
-          // Generate receipt data
-          const receipt = await generateReceiptData(result, paymentAmount);
-          setReceiptData(receipt);
-
-          // Show success alert with option to view receipt
-          Alert.alert(
-            "✅ Payment Successful",
-            `Your payment of ${formatCurrency(paymentAmount)} has been successfully processed.\n\nWould you like to view the receipt?`,
-            [
-              {
-                text: "View Receipt",
-                onPress: () => {
-                  setShowReceipt(true);
-                },
-              },
-            ],
-          );
-
-          // Refresh data
-          setTimeout(() => {
-            fetchAvailableCredits();
-            if (fetchSubscriptionDetails) fetchSubscriptionDetails();
-          }, 1000);
-        } else {
-          throw new Error(
-            result.message || "Payment completed but confirmation unclear",
-          );
-        }
-      } else {
-        let errorMessage = result.message || result.error || "Payment failed";
-
-        if (response.status === 422) {
-          errorMessage =
-            "Validation error: " +
-            (result.errors ? JSON.stringify(result.errors) : "Invalid data");
-        }
-
-        throw new Error(errorMessage);
-      }
-    } catch (error) {
-
-      if (error.message.includes("Network request failed")) {
-        Alert.alert(
-          "Network Error",
-          "Please check your internet connection and try again.",
-          [{ text: "OK", style: "default" }],
-        );
-      } else if (
-        error.message.includes("Session expired") ||
-        error.message.includes("Unauthenticated")
-      ) {
-        // Already handled above
-      } else {
-        Alert.alert(
-          "Payment Failed",
-          error.message || "An unexpected error occurred. Please try again.",
-          [{ text: "OK", style: "default" }],
-        );
-      }
+      Alert.alert(
+        "Payment Failed",
+        error.message || "Something went wrong. Please try again.",
+        [{ text: "OK" }],
+      );
     } finally {
       setProcessing(false);
     }
   };
-
-  const renderRow = (label, value, isBold = false) => {
-    return (
-      <View style={styles.row}>
-        <Text style={[styles.rowLabel, isBold && styles.boldText]}>
-          {label}:
-        </Text>
-        <Text style={[styles.rowValue, isBold && styles.boldText]}>
-          {value}
-        </Text>
-      </View>
-    );
-  };
-
   // Render Receipt Modal
   const renderReceiptModal = () => {
-    const receiptPlan =
-      subscriptionDetails?.plan?.name || selectedBill?.plan?.name || "N/A";
-
     if (!receiptData) return null;
 
     return (
       <Modal visible={showReceipt} animationType="slide">
         <View style={styles.container}>
-          {/* Close Button */}
           <TouchableOpacity
             style={styles.closeButton}
             onPress={() => {
@@ -1133,12 +955,10 @@ const getBase64Logo = async () => {
           </TouchableOpacity>
 
           <ScrollView contentContainerStyle={styles.content1}>
-            {/* Header with business name and type */}
             <Text style={styles.companyHeader}>
-              {receiptData.companyName || "KAZIBUFAST NETWORKSS"}
+              {receiptData.companyName || "KAZIBUFAST NETWORKS"}
             </Text>
 
-            {/* Address and contact info */}
             <View style={styles.companyInfoContainer}>
               <Text style={styles.companyInfo}>
                 {receiptData.companyAddress}
@@ -1146,12 +966,9 @@ const getBase64Logo = async () => {
               <Text style={styles.companyInfo}>{receiptData.companyPhone}</Text>
             </View>
 
-            {/* Title */}
             <Text style={styles.title}>Payment Details</Text>
 
-            {/* Table - Recreating the table-like structure */}
             <View style={styles.tableContainer}>
-              {/* Table Header */}
               <View style={styles.tableHeader}>
                 <Text style={styles.tableHeaderTextLeft}>Account Number</Text>
                 <Text style={styles.tableHeaderTextRight}>
@@ -1168,7 +985,7 @@ const getBase64Logo = async () => {
 
               <View style={styles.tableRow}>
                 <Text style={styles.tableLabel}>Plan</Text>
-                <Text style={styles.tableValue}>{receiptPlan}</Text>
+                <Text style={styles.tableValue}>{receiptData.plan}</Text>
               </View>
 
               <View style={styles.tableRow}>
@@ -1191,37 +1008,42 @@ const getBase64Logo = async () => {
               <View style={styles.tableRow}>
                 <Text style={styles.tableLabel}>Previous Balance</Text>
                 <Text style={styles.tableValue}>
-                  {receiptData.previousBalance}
+                  {formatCurrency(receiptData.previousBalance)}
                 </Text>
               </View>
 
               <View style={styles.tableRow}>
                 <Text style={styles.tableLabel}>Current Charges</Text>
                 <Text style={styles.tableValue}>
-                  {receiptData.currentCharges}
+                  {formatCurrency(receiptData.currentCharges)}
                 </Text>
               </View>
 
               <View style={styles.tableRow}>
                 <Text style={styles.tableLabel}>Total Amount Due</Text>
-                <Text style={styles.tableValue}>{receiptData.totalDue}</Text>
+                <Text style={styles.tableValue}>
+                  {formatCurrency(receiptData.totalDue)}
+                </Text>
               </View>
 
               <View style={styles.tableRow}>
                 <Text style={styles.tableLabel}>Discount</Text>
-                <Text style={styles.tableValue}>{receiptData.discount}</Text>
+                <Text style={styles.tableValue}>
+                  {formatCurrency(receiptData.discount)}
+                </Text>
               </View>
 
               <View style={styles.tableRow}>
                 <Text style={styles.tableLabel}>Penalty</Text>
-                <Text style={styles.tableValue}>{receiptData.penalty}</Text>
+                <Text style={styles.tableValue}>
+                  {formatCurrency(receiptData.penalty)}
+                </Text>
               </View>
 
-              {/* Paid Amount with different styling */}
               <View style={styles.paidAmountRow}>
                 <Text style={styles.paidAmountLabel}>Paid Amount</Text>
                 <Text style={styles.paidAmountValue}>
-                  {receiptData.paymentAmount}
+                  {formatCurrency(receiptData.paymentAmount)}
                 </Text>
               </View>
             </View>
@@ -1231,15 +1053,21 @@ const getBase64Logo = async () => {
             <TouchableOpacity
               style={styles.pdfButton}
               onPress={() => saveReceiptAsPDF(receiptData)}
+              disabled={downloadingReceipt}
             >
-              <Text style={styles.buttonText}>Save as PDF</Text>
+              <Text style={styles.buttonText}>
+                {downloadingReceipt ? "Saving..." : "Save as PDF"}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.printButton}
               onPress={() => printReceipt(receiptData)}
+              disabled={printingReceipt}
             >
-              <Text style={styles.buttonText}>Print</Text>
+              <Text style={styles.buttonText}>
+                {printingReceipt ? "Printing..." : "Print"}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1249,10 +1077,6 @@ const getBase64Logo = async () => {
 
   const renderInputSection = () => {
     const maxAmount = getMaxPaymentAmount();
-    const minAmount = getMinPaymentAmount();
-    const billAmount = selectedBill?.amount_due || calculateTotalAmountDue();
-    const penalty = selectedBill.penalty || 0;
-    const discount = selectedBill.discount || 0;
 
     return (
       <View style={[styles.inputSection, { backgroundColor: colors.surface }]}>
@@ -1292,9 +1116,7 @@ const getBase64Logo = async () => {
           <Text style={[styles.errorText, { color: colors.danger }]}>
             {paymentError}
           </Text>
-        ) : (
-          <View></View>
-        )}
+        ) : null}
 
         <TouchableOpacity
           style={[
@@ -1317,7 +1139,7 @@ const getBase64Logo = async () => {
   };
 
   const renderBillSummary = () => {
-    if (loadingDetails) {
+    if (loading) {
       return (
         <View style={[styles.billSection, { backgroundColor: colors.surface }]}>
           <View style={styles.loadingBillContainer}>
@@ -1359,7 +1181,7 @@ const getBase64Logo = async () => {
                 styles.retryButton,
                 { backgroundColor: colors.primary, marginTop: 15 },
               ]}
-              onPress={fetchSubscriptionDetails}
+              onPress={fetchAllData}
             >
               <Text style={[styles.retryButtonText, { color: colors.white }]}>
                 Retry
@@ -1370,14 +1192,18 @@ const getBase64Logo = async () => {
       );
     }
 
-    const previousBalance = parseFloat(selectedBill.prev_balance ?? 1);
+    const previousBalance = parseFloat(
+      selectedBill.previous_balance || selectedBill.prev_balance || 0,
+    );
     const currentCharges = parseFloat(
-      selectedBill.current_charges || selectedBill.original_amount || 0,
+      selectedBill.current_charges ||
+        selectedBill.original_amount ||
+        selectedBill.amount ||
+        0,
     );
     const penalty = parseFloat(selectedBill.penalty || 0);
     const discount = parseFloat(selectedBill.discount || 0);
     const totalDue = calculateTotalAmountDue();
-    const amountDue = selectedBill.amount_due || totalDue;
 
     return (
       <View style={[styles.billSection, { backgroundColor: colors.surface }]}>
@@ -1390,7 +1216,7 @@ const getBase64Logo = async () => {
             Account Number:
           </Text>
           <Text style={[styles.billValue, { color: colors.text }]}>
-            {subscriptionDetails?.id || selectedBill?.reference_number || "N/A"}
+            {selectedBill?.reference_number || selectedBill?.id || "N/A"}
           </Text>
         </View>
         <View style={styles.billRow}>
@@ -1415,7 +1241,7 @@ const getBase64Logo = async () => {
             Current Charges:
           </Text>
           <Text style={[styles.billValue, { color: colors.text }]}>
-            {formatCurrency(currentCharges) || "N/A"}
+            {formatCurrency(currentCharges)}
           </Text>
         </View>
         <View style={styles.billRow}>
@@ -1423,7 +1249,7 @@ const getBase64Logo = async () => {
             Previous Balance:
           </Text>
           <Text style={[styles.billValue, { color: colors.text }]}>
-            {formatCurrency(previousBalance) || "N/A"}
+            {formatCurrency(previousBalance)}
           </Text>
         </View>
         <View style={styles.billRow}>
@@ -1431,7 +1257,7 @@ const getBase64Logo = async () => {
             Penalty:
           </Text>
           <Text style={[styles.billValue, { color: colors.text }]}>
-            {formatCurrency(penalty) || "N/A"}
+            {formatCurrency(penalty)}
           </Text>
         </View>
         <View style={styles.billRow}>
@@ -1439,11 +1265,9 @@ const getBase64Logo = async () => {
             Discount:
           </Text>
           <Text style={[styles.billValue, { color: colors.text }]}>
-            {formatCurrency(discount) || "N/A"}
+            {formatCurrency(discount)}
           </Text>
         </View>
-
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
@@ -1453,38 +1277,40 @@ const getBase64Logo = async () => {
             TOTAL AMOUNT DUE:
           </Text>
           <Text style={[styles.totalAmount, { color: colors.primary }]}>
-            {formatCurrency(amountDue + penalty - discount)}
+            {formatCurrency(totalDue + penalty - discount)}
           </Text>
         </View>
 
         {/* Payment Status */}
-        <View
-          style={[
-            styles.statusBadge,
-            {
-              backgroundColor:
-                selectedBill.status === "paid"
-                  ? colors.success + "20"
-                  : colors.danger + "20",
-              alignSelf: "flex-start",
-              marginTop: 12,
-            },
-          ]}
-        >
-          <Text
+        {selectedBill.status && (
+          <View
             style={[
-              styles.statusText,
+              styles.statusBadge,
               {
-                color:
+                backgroundColor:
                   selectedBill.status === "paid"
-                    ? colors.success
-                    : colors.danger,
+                    ? colors.success + "20"
+                    : colors.danger + "20",
+                alignSelf: "flex-start",
+                marginTop: 12,
               },
             ]}
           >
-            {selectedBill.status ? selectedBill.status.toUpperCase() : "UNPAID"}
-          </Text>
-        </View>
+            <Text
+              style={[
+                styles.statusText,
+                {
+                  color:
+                    selectedBill.status === "paid"
+                      ? colors.success
+                      : colors.danger,
+                },
+              ]}
+            >
+              {selectedBill.status.toUpperCase()}
+            </Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -1515,12 +1341,10 @@ const getBase64Logo = async () => {
               color={colors.primary}
             />
             <Text style={[styles.balanceInfoText, { color: colors.textLight }]}>
-              {selectedBill &&
-              availableCredits >=
-                (selectedBill.amount_due || calculateTotalAmountDue())
+              {selectedBill && availableCredits >= calculateTotalAmountDue()
                 ? "✓ You have enough credits to pay this bill"
                 : selectedBill
-                  ? `You need ${formatCurrency((selectedBill.amount_due || calculateTotalAmountDue()) - availableCredits)} more credits to pay in full`
+                  ? `You need ${formatCurrency(calculateTotalAmountDue() - availableCredits)} more credits to pay in full`
                   : "Loading bill amount..."}
             </Text>
           </View>
@@ -1529,18 +1353,7 @@ const getBase64Logo = async () => {
     </View>
   );
 
-  const calculateRemainingBalance = () => {
-    const paymentAmount = parseFloat(amount) || 0;
-    const billAmount = selectedBill?.amount_due || calculateTotalAmountDue();
-    return billAmount - paymentAmount;
-  };
-
-  const calculateRemainingCredits = () => {
-    const paymentAmount = parseFloat(amount) || 0;
-    return availableCredits - paymentAmount;
-  };
-
-  if (loading && loadingDetails) {
+  if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.fullLoadingContainer}>
@@ -1555,12 +1368,9 @@ const getBase64Logo = async () => {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={colors.primary}
-      />
-      
-      {/* Header - EXTENDS TO VERY TOP */}
+      <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+
+      {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.primary }]}>
         <TouchableOpacity
           style={styles.backButton}
@@ -1632,6 +1442,7 @@ const getBase64Logo = async () => {
   );
 };
 
+// Keep all your existing styles...
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1642,8 +1453,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    paddingTop: Platform.OS === 'ios' ? 50 : 40, // Adjust for iOS status bar
-  
+    paddingTop: Platform.OS === "ios" ? 50 : 40,
   },
   backButton: {
     padding: 8,
@@ -1691,7 +1501,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginLeft: 8,
   },
-  // Rest of your styles remain the same...
   amountInput: {
     flex: 1,
     fontSize: 24,
@@ -1775,11 +1584,12 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 50,
   },
-  companyName: {
+  companyHeader: {
     fontSize: 18,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 5,
+    color: "#333",
+    marginBottom: 10,
   },
   companyInfoContainer: {
     marginBottom: 20,
@@ -1790,13 +1600,6 @@ const styles = StyleSheet.create({
     color: "#555",
     textAlign: "center",
     marginBottom: 4,
-  },
-  companyHeader: {
-    fontSize: 18,
-    fontWeight: "bold",
-    textAlign: "center",
-    color: "#333",
-    marginBottom: 10,
   },
   currencySymbol: {
     fontSize: 24,
@@ -1845,29 +1648,6 @@ const styles = StyleSheet.create({
   fullLoadingText: {
     marginTop: 10,
     fontSize: 16,
-  },
-  infoLabel: {
-    fontSize: 13,
-    flex: 1,
-    color: "#000",
-  },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
-    paddingVertical: 4,
-  },
-  infoValue: {
-    fontSize: 13,
-    fontWeight: "500",
-    flex: 2,
-    textAlign: "right",
-    color: "#000",
-  },
-  inputHelper: {
-    fontSize: 12,
-    marginBottom: 4,
-    color: "#64748B",
   },
   inputLabel: {
     fontSize: 16,
@@ -1933,21 +1713,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  rowLabel: {
-    flex: 1,
-    fontWeight: "600",
-  },
-  rowValue: {
-    flex: 1,
-    textAlign: "right",
-  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "600",
@@ -1963,24 +1728,6 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: "600",
-  },
-  summaryLabel: {
-    fontSize: 14,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  summarySection: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-  },
-  summaryValue: {
-    fontSize: 14,
-    fontWeight: "500",
   },
   tableContainer: {
     borderWidth: 1,

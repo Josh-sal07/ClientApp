@@ -21,6 +21,7 @@ import { useTheme } from "../../../../theme/ThemeContext";
 import axios from "axios";
 
 // API endpoints
+
 const API_PROFILE_URL = "https://staging.kazibufastnet.com/api/app/profile";
 
 function Profile() {
@@ -77,49 +78,91 @@ function Profile() {
   const colors = effectiveMode === "dark" ? COLORS.dark : COLORS.light;
 
   // Fetch profile data
-  const fetchProfileData = async () => {
-    try {
-      const token = await AsyncStorage.getItem("token");
+const fetchProfileData = async () => {
+  try {
+    const token = await AsyncStorage.getItem("token");
+    console.log("Token retrieved:", token ? "Yes" : "No");
 
-      if (!token) {
-        Alert.alert("Error", "Authentication required");
+    if (!token) {
+      Alert.alert("Error", "Authentication required");
+      return;
+    }
+
+    // Check if user.branch exists
+    if (!user?.branch?.subdomain) {
+      Alert.alert("Error", "Subdomain not found");
+      console.log("Current user object:", user);
+      return;
+    }
+
+    const subdomain = user.branch.subdomain;
+    const url = `https://${subdomain}.kazibufastnet.com/api/app/profile`;
+    console.log("Request URL:", url);
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      timeout: 10000,
+    });
+
+    console.log("Response status:", response.status);
+    console.log("Response data:", JSON.stringify(response.data, null, 2));
+
+    // More flexible response handling
+    if (response.status === 200) {
+      let profileData;
+      
+      if (response.data.success && response.data.data) {
+        profileData = response.data.data;
+      } else if (response.data.user) {
+        profileData = response.data.user;
+      } else if (response.data) {
+        profileData = response.data;
+      }
+      
+      if (profileData) {
+        setProfileData(profileData);
+        
+        // Update user store
+        setUser({
+          ...user,
+          name: profileData.name || user.name,
+          email: profileData.email || user.email,
+          contactNumber: profileData.contactNumber || profileData.mobile || user.contactNumber,
+        });
         return;
       }
-
-      const response = await axios.get(API_PROFILE_URL, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-        timeout: 10000,
-      });
-
-      if (response.data && response.data.success) {
-        const data = response.data.data;
-        setProfileData(data);
-
-        // Update user store with latest data
-        if (data.name || data.email || data.contactNumber || data.mobile) {
-          setUser({
-            ...user,
-            name: data.name || user.name,
-            email: data.email || user.email,
-            contactNumber:
-              data.contactNumber || data.mobile || user.contactNumber,
-          });
-        }
-      }
-    } catch (error) {
-      if (error.response?.status === 401) {
-        Alert.alert("Session Expired", "Please login again");
-        handleLogout();
-      } else if (error.code === "ECONNABORTED") {
-        Alert.alert("Timeout", "Please check your internet connection");
-      } else {
-        Alert.alert("Error", "Failed to load profile data");
-      }
     }
-  };
+    
+    Alert.alert("Error", "Invalid response format from server");
+
+  } catch (error) {
+    console.log("Error details:", error);
+    console.log("Error message:", error.message);
+    console.log("Error response:", error.response?.data);
+    console.log("Error status:", error.response?.status);
+    
+    if (error.response?.status === 401) {
+      Alert.alert("Session Expired", "Please login again");
+      handleLogout();
+    } else if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+      Alert.alert("Timeout", "Please check your internet connection");
+    } else if (error.response?.status === 404) {
+      Alert.alert("Error", "Profile endpoint not found");
+    } else if (error.response?.status === 403) {
+      Alert.alert("Error", "Access denied");
+    } else if (error.response?.status === 500) {
+      Alert.alert("Error", "Server error");
+    } else if (error.message?.includes("Network Error")) {
+      Alert.alert("Network Error", "Cannot connect to server");
+    } else {
+      Alert.alert("Error", "Failed to load profile data: " + (error.message || "Unknown error"));
+    }
+  }
+};
 
   // Handle refresh
   const onRefresh = async () => {
@@ -162,7 +205,8 @@ function Profile() {
             await AsyncStorage.multiRemove([
               "token",
               "last_active_time",
-              "biometric_verified_session"
+              "biometric_verified_session",
+               "has_logged_in" 
             ]);
 
             setToken(null);

@@ -115,14 +115,21 @@ const AboutKazibufast = () => {
     {
       id: "phone",
       title: "Phone",
-      subtitle: "0950-822-1851",
+      subtitle: "0950-5358-971",
+      icon: "call-outline",
+      color: colors.primary,
+    },
+    {
+      id: "phone2",
+      title: "Phone",
+      subtitle: "0955-9844-890",
       icon: "call-outline",
       color: colors.primary,
     },
     {
       id: "email",
       title: "Email",
-      subtitle: "support@kazibufast.com",
+      subtitle: "kazibufast@gmail.com",
       icon: "mail-outline",
       color: colors.primary,
     },

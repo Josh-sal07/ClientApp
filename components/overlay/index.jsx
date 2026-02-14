@@ -32,92 +32,11 @@ const BUTTON_SIZE = 60;
 const getUserMessagesKey = (userId) => `kazi_chat_messages_${userId}`;
 const getUserTicketsKey = (userId) => `kazi_support_tickets_${userId}`;
 
-// ==================== FIXED: Ticket data structure creation ====================
-// ==================== FIXED: Ticket data structure creation ====================
-const createTicketData = (
-  backendTicketId,
-  subject,
-  subscription,
-  attachments = [],
-) => {
-  if (!backendTicketId) {
-    throw new Error("Backend ticket ID is required");
-  }
-
-  // CRITICAL: Validate ticket ID format
-  // Should not be a timestamp or subscription ID
-  if (
-    backendTicketId.toString().length < 3 ||
-    backendTicketId.toString() === subscription.id.toString() ||
-    backendTicketId.toString() === subscription.subscription_id.toString()
-  ) {
-    throw new Error("Invalid ticket ID received from backend");
-  }
-
-  const now = new Date();
-
-  // Format attachments
-  const formattedAttachments = attachments.map((attachment, index) => ({
-    uri: attachment.uri,
-    id: `attachment_${Date.now()}_${index}`,
-    name: attachment.name || `image_${index}.jpg`,
-    type: "image",
-  }));
-
-  return {
-    id: backendTicketId,
-    ticketNumber: backendTicketId,
-    subject: subject,
-    description: `Support request for subscription: ${subscription.plan?.name || "Unknown Plan"}`,
-    status: "submitted",
-    priority: "medium",
-    category: "Technical Support",
-    createdAt: now,
-    updatedAt: now,
-    attachments: formattedAttachments,
-    responseCount: 0,
-    assignedTo: null,
-    lastResponse: null,
-    formattedDate: now.toLocaleDateString(),
-    formattedTime: now.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-    subscription_id: subscription.id || subscription.subscription_id,
-    subscription_name: subscription.plan?.name || "Unknown Subscription",
-    backendId: backendTicketId,
-    isSynced: true,
-    syncDate: now.toISOString(),
-  };
-};
-
-// ==================== DEBUG FUNCTION ====================
-const debugTicketStorage = async (userId) => {
-  try {
-    if (!userId) {
-      return;
-    }
-
-    const userTicketsKey = getUserTicketsKey(userId);
-    const stored = await AsyncStorage.getItem(userTicketsKey);
-
-    if (stored) {
-      const tickets = JSON.parse(stored);
-
-      if (tickets.length > 0) {
-      }
-    } else {
-    }
-  } catch (error) {}
-};
-
 // Custom styles generator based on theme
 const getStyles = (colors) => ({
   // Floating Button
   floatingButton: {
     position: "absolute",
-    bottom: 100,
-    right: 20,
     backgroundColor: colors.primary,
     width: BUTTON_SIZE,
     height: BUTTON_SIZE,
@@ -432,9 +351,6 @@ const getStyles = (colors) => ({
     maxHeight: 100,
     padding: 0,
   },
-  attachButton: {
-    padding: 8,
-  },
   sendButton: {
     width: 44,
     height: 44,
@@ -505,9 +421,6 @@ const getStyles = (colors) => ({
   },
   dropdownButtonPlaceholder: {
     color: colors.textLight,
-  },
-  dropdownIcon: {
-    marginLeft: 8,
   },
   dropdownList: {
     position: "absolute",
@@ -630,46 +543,6 @@ const getStyles = (colors) => ({
     fontWeight: "bold",
     marginLeft: 10,
   },
-
-  // Overlay for modals
-  overlay: {
-    flex: 1,
-    backgroundColor: colors.modalOverlay || "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  attachmentModal: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: Platform.OS === "ios" ? 40 : 20,
-  },
-  attachmentOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  attachmentOptionText: {
-    fontSize: 16,
-    marginLeft: 16,
-    color: colors.text,
-  },
-  attachmentCancel: {
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  attachmentCancelText: {
-    fontSize: 16,
-    color: colors.danger,
-    fontWeight: "600",
-  },
 });
 
 const FloatingButton = ({
@@ -684,18 +557,14 @@ const FloatingButton = ({
 
   return (
     <Animated.View
-  {...panHandlers}
-  style={[
-    getStyles(colors).floatingButton,
-    {
-      bottom: undefined,
-      right: undefined,
-      transform: pan.getTranslateTransform(),
-    },
-  ]}
->
-
-      {/* IMPORTANT: Touchable INSIDE Animated.View */}
+      {...panHandlers}
+      style={[
+        getStyles(colors).floatingButton,
+        {
+          transform: pan.getTranslateTransform(),
+        },
+      ]}
+    >
       <TouchableOpacity
         activeOpacity={0.9}
         onPress={onPress}
@@ -733,6 +602,21 @@ const getSubscriptionAddress = (subscription) => {
     subscription.full_address ||
     "No address specified"
   );
+};
+
+// Format ticket number for display
+const formatTicketNumber = (ticketNum, backendId) => {
+  // If we have a proper ticket number (not just ID), use it
+  if (ticketNum && ticketNum.toString() !== backendId.toString()) {
+    // Ensure it has proper formatting
+    if (!ticketNum.toString().includes('TKT-') && !ticketNum.toString().includes('#')) {
+      return `TKT-${ticketNum}`;
+    }
+    return ticketNum.toString();
+  }
+  
+  // Fallback to formatted backend ID
+  return `TKT-${backendId}`;
 };
 
 // Main Chatbot Component
@@ -794,8 +678,6 @@ const ChatBot = () => {
   const [inputText, setInputText] = useState("");
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
-  const [attachments, setAttachments] = useState([]);
-  const [showAttachmentOptions, setShowAttachmentOptions] = useState(false);
   const [showTicketPrompt, setShowTicketPrompt] = useState(false);
   const [conversationContext, setConversationContext] = useState(null);
   const [showContactInfo, setShowContactInfo] = useState(false);
@@ -809,32 +691,27 @@ const ChatBot = () => {
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
   const [subscriptions, setSubscriptions] = useState([]);
   const [selectedSubscription, setSelectedSubscription] = useState(null);
-  const [showSubscriptionDropdown, setShowSubscriptionDropdown] =
-    useState(false);
+  const [showSubscriptionDropdown, setShowSubscriptionDropdown] = useState(false);
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
 
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
 
   const EDGE_PADDING = 12;
-  const BUTTON_SIZE = 60;
-
-  const MIN_Y = 80; // avoid status bar
-  const MAX_Y = SCREEN_HEIGHT - BUTTON_SIZE - 120; // avoid tab bar
+  const MIN_Y = 80;
+  const MAX_Y = SCREEN_HEIGHT - BUTTON_SIZE - 120;
 
   const pan = useRef(
     new Animated.ValueXY({
-      x: SCREEN_WIDTH - BUTTON_SIZE - 20, // initial X
-      y: SCREEN_HEIGHT - 200, // initial Y
-    }),
+      x: SCREEN_WIDTH - BUTTON_SIZE - 20,
+      y: SCREEN_HEIGHT - 200,
+    })
   ).current;
 
   const panResponder = useRef(
     PanResponder.create({
-      // Allow drag when finger MOVES
       onMoveShouldSetPanResponder: (_, gesture) =>
         Math.abs(gesture.dx) > 3 || Math.abs(gesture.dy) > 3,
-
       onPanResponderGrant: () => {
         pan.setOffset({
           x: pan.x._value,
@@ -842,41 +719,32 @@ const ChatBot = () => {
         });
         pan.setValue({ x: 0, y: 0 });
       },
-
       onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
         useNativeDriver: false,
       }),
-
       onPanResponderRelease: (_, gesture) => {
         pan.flattenOffset();
-
         const middleX = SCREEN_WIDTH / 2;
-
-        // Decide snap side
-        const snapX =
-          pan.x._value + BUTTON_SIZE / 2 < middleX
-            ? EDGE_PADDING
-            : SCREEN_WIDTH - BUTTON_SIZE - EDGE_PADDING;
-
-        // Clamp Y (prevent going off screen)
+        const snapX = pan.x._value + BUTTON_SIZE / 2 < middleX
+          ? EDGE_PADDING
+          : SCREEN_WIDTH - BUTTON_SIZE - EDGE_PADDING;
         let snapY = pan.y._value;
         if (snapY < MIN_Y) snapY = MIN_Y;
         if (snapY > MAX_Y) snapY = MAX_Y;
-
         Animated.spring(pan, {
           toValue: { x: snapX, y: snapY },
           useNativeDriver: false,
           friction: 6,
         }).start();
       },
-    }),
+    })
   ).current;
 
   // Contact information
   const contactInfo = {
-    phone: "+1-800-123-4567",
-    email: "support@kazibufast.com",
-    hours: "24/7 Support",
+    phone: "+639505358971",
+    phone2: "+639559844890",
+    email: "kazibufast@gmail.com",
   };
 
   // Initial quick questions
@@ -937,7 +805,7 @@ const ChatBot = () => {
     showRestartOptions,
   ]);
 
-  // ==================== FIXED: Load subscriptions ====================
+  // Load subscriptions
   const loadSubscriptions = async () => {
     setLoadingSubscriptions(true);
     try {
@@ -954,21 +822,31 @@ const ChatBot = () => {
         return;
       }
 
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/subscriptions`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
+      // Check for subdomain
+      if (!user?.branch?.subdomain) {
+        Alert.alert("Error", "Subdomain not found. Please contact support.");
+        setSubscriptions([]);
+        return;
+      }
+
+      const subdomain = user.branch.subdomain;
+      const API_URL = `https://${subdomain}.kazibufastnet.com/api/app/subscriptions`;
+      console.log("Loading subscriptions from:", API_URL);
+
+      const response = await fetch(API_URL, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
         },
-      );
+      });
 
       if (!response.ok) {
         throw new Error(`Failed to load subscriptions: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log("Subscriptions response:", data);
+
       let subscriptions = [];
 
       // Parse subscriptions
@@ -1030,14 +908,18 @@ const ChatBot = () => {
         );
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to load subscriptions. Please try again.");
+      console.log("Load subscriptions error:", error);
+      Alert.alert(
+        "Error",
+        error.message || "Failed to load subscriptions. Please try again.",
+      );
       setSubscriptions([]);
     } finally {
       setLoadingSubscriptions(false);
     }
   };
 
-  // ==================== FIXED: Load messages ====================
+  // Load messages
   const loadMessages = async () => {
     try {
       if (!user || !user.id) {
@@ -1074,7 +956,9 @@ const ChatBot = () => {
           },
         ]);
       }
-    } catch (error) {}
+    } catch (error) {
+      console.log("Error loading messages:", error);
+    }
   };
 
   const saveMessages = async (newMessages) => {
@@ -1082,10 +966,12 @@ const ChatBot = () => {
       if (!user || !user.id) return;
       const userMessagesKey = getUserMessagesKey(user.id);
       await AsyncStorage.setItem(userMessagesKey, JSON.stringify(newMessages));
-    } catch (error) {}
+    } catch (error) {
+      console.log("Error saving messages:", error);
+    }
   };
 
-  // ==================== FIXED: Handle quick replies ====================
+  // Handle quick replies
   const handleQuickReply = async (question) => {
     const userMsg = {
       id: Date.now().toString(),
@@ -1123,7 +1009,7 @@ const ChatBot = () => {
     }, 1500);
   };
 
-  // ==================== FIXED: Handle no internet follow-up ====================
+  // Handle no internet follow-up
   const handleNoInternetFollowUp = async (response) => {
     const userMsg = {
       id: Date.now().toString(),
@@ -1181,7 +1067,7 @@ const ChatBot = () => {
     }, 1500);
   };
 
-  // ==================== FIXED: Handle yes/no response ====================
+  // Handle yes/no response
   const handleYesNoResponse = async (response) => {
     const userMsg = {
       id: Date.now().toString(),
@@ -1275,7 +1161,7 @@ const ChatBot = () => {
     }, 1500);
   };
 
-  // ==================== FIXED: Handle restart response ====================
+  // Handle restart response
   const handleRestartResponse = async (response) => {
     const userMsg = {
       id: Date.now().toString(),
@@ -1321,7 +1207,7 @@ const ChatBot = () => {
     }, 1500);
   };
 
-  // ==================== FIXED: Handle slow internet yes/no ====================
+  // Handle slow internet yes/no
   const handleSlowInternetYesNo = async (response) => {
     const userMsg = {
       id: Date.now().toString(),
@@ -1375,7 +1261,7 @@ const ChatBot = () => {
     }, 1500);
   };
 
-  // ==================== FIXED: Generate contextual response ====================
+  // Generate contextual response
   const generateContextualResponse = (context, question) => {
     switch (context) {
       case "no_internet":
@@ -1417,9 +1303,9 @@ const ChatBot = () => {
     }
   };
 
-  // ==================== FIXED: Send regular message ====================
+  // Send regular message
   const sendMessage = async (text = inputText.trim()) => {
-    if (!text && attachments.length === 0) {
+    if (!text) {
       Alert.alert("Empty", "Please type a message.");
       return;
     }
@@ -1429,7 +1315,6 @@ const ChatBot = () => {
       text,
       sender: "user",
       timestamp: new Date(),
-      attachments: attachments.length > 0 ? [...attachments] : undefined,
     };
 
     const updatedMessages = [...messages, userMsg];
@@ -1437,7 +1322,6 @@ const ChatBot = () => {
     saveMessages(updatedMessages);
 
     setInputText("");
-    setAttachments([]);
     setIsTyping(true);
 
     setTimeout(() => {
@@ -1455,7 +1339,7 @@ const ChatBot = () => {
     }, 1500);
   };
 
-  // ==================== CRITICAL FIX: Ticket submission ====================
+  // Submit ticket
   const submitTicket = async () => {
     if (!ticketSubject.trim()) {
       Alert.alert("Required", "Please describe your issue.");
@@ -1483,7 +1367,16 @@ const ChatBot = () => {
         return;
       }
 
+      // Check for subdomain
+      if (!user?.branch?.subdomain) {
+        Alert.alert("Error", "Subdomain not found. Please contact support.");
+        setIsSubmittingTicket(false);
+        return;
+      }
+
+      const subdomain = user.branch.subdomain;
       const subscriptionId = selectedSubscription.id;
+
       if (!subscriptionId) {
         Alert.alert("Error", "No valid subscription ID found.");
         setIsSubmittingTicket(false);
@@ -1495,68 +1388,53 @@ const ChatBot = () => {
 
       // Add text fields
       formData.append("subject", ticketSubject);
-      formData.append("description", `Support request: ${ticketSubject}`);
+      formData.append("description", ticketSubject);
       formData.append("category", "Technical Support");
       formData.append("priority", "medium");
       formData.append("subscription_id", subscriptionId);
       formData.append("user_id", user.id.toString());
-      formData.append("source", "Chatbot");
 
-      // Append attachments - FIXED VERSION
+      // Append attachments
       if (ticketAttachments && ticketAttachments.length > 0) {
         ticketAttachments.forEach((attachment, index) => {
-          // Extract filename from URI
           const uriParts = attachment.uri.split("/");
           const filename = uriParts[uriParts.length - 1];
 
-          // Determine MIME type based on file extension
-          let type = "image/jpeg"; // default
+          let type = "image/jpeg";
           if (filename.toLowerCase().endsWith(".png")) {
             type = "image/png";
           } else if (filename.toLowerCase().endsWith(".gif")) {
             type = "image/gif";
           }
 
-          // CORRECT WAY to append file to FormData
-          // Use the same field name for all images (some backends use 'attachments[]', some use 'images[]')
-          formData.append("attachments[]", {
+          formData.append("picture", {
             uri: attachment.uri,
             type: type,
             name: filename,
           });
-
-          // ALTERNATIVE: Try without array brackets if above doesn't work
-          // formData.append('picture', {
-          //   uri: attachment.uri,
-          //   type: type,
-          //   name: filename,
-          // });
         });
-      } else {
       }
 
-      for (let pair of formData.entries()) {
-      }
+      console.log("FormData prepared with subscription_id:", subscriptionId);
 
-      // IMPORTANT: DON'T set Content-Type header manually for FormData
-      // Let the browser set it with the correct boundary
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/tickets/create`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            // DO NOT set Content-Type here - FormData will set it automatically
-            Accept: "application/json",
-          },
-          body: formData,
+      // Build URL with subdomain
+      const API_URL = `https://${subdomain}.kazibufastnet.com/api/app/tickets/create`;
+      console.log("Creating ticket at:", API_URL);
+
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
         },
-      );
+        body: formData,
+      });
+
       const responseText = await response.text();
+      console.log("Response status:", response.status);
+      console.log("Raw response text:", responseText);
 
       if (!response.ok) {
-
-        // Try to parse error message
         let errorMessage = "Failed to create ticket. Please try again.";
         try {
           const errorData = JSON.parse(responseText);
@@ -1567,75 +1445,80 @@ const ChatBot = () => {
             errorMessage = Object.values(errorData.errors).flat().join(", ");
           }
         } catch (e) {
-          // Not JSON, use text as is
-          if (
-            responseText.includes("validation") ||
-            responseText.includes("Invalid")
-          ) {
-            errorMessage = "Please check your input and try again.";
-          }
+          console.log("Could not parse error response as JSON");
         }
-
-        Alert.alert("Error", errorMessage);
-        setIsSubmittingTicket(false);
-        return;
+        throw new Error(errorMessage);
       }
 
       let apiResponseData;
       try {
         apiResponseData = JSON.parse(responseText);
+        console.log(
+          "Parsed API response:",
+          JSON.stringify(apiResponseData, null, 2),
+        );
       } catch (e) {
-        Alert.alert("Error", "Invalid response from server.");
-        setIsSubmittingTicket(false);
-        return;
-      }
-      let savedAttachments = [];
-
-      if (apiResponseData.data?.attachments) {
-        savedAttachments = apiResponseData.data.attachments;
-      } else if (apiResponseData.ticket?.attachments) {
-        savedAttachments = apiResponseData.ticket.attachments;
-      } else if (apiResponseData.attachments) {
-        savedAttachments = apiResponseData.attachments;
+        console.log("JSON parse error:", e);
+        throw new Error("Invalid JSON response from server");
       }
 
-      if (savedAttachments.length > 0) {
-      } else {
-      }
-
-      // ============ EXTRACT BACKEND DATABASE ID ============
+      // Extract backend ID and ticket number
       let backendId = null;
       let ticketNumber = null;
 
-      // Try different response structures
-      if (apiResponseData.data?.id) {
-        backendId = apiResponseData.data.id;
-        ticketNumber = apiResponseData.data.ticket_number;
-      } else if (apiResponseData.id) {
-        backendId = apiResponseData.id;
-        ticketNumber = apiResponseData.ticket_number;
-      } else if (apiResponseData.ticket?.id) {
-        backendId = apiResponseData.ticket.id;
-        ticketNumber = apiResponseData.ticket.ticket_number;
-      } else if (apiResponseData.ticket_id) {
-        backendId = apiResponseData.ticket_id;
-        ticketNumber = apiResponseData.ticket_number;
+      // Try to find ticket data in different response structures
+      let ticketData = null;
+
+      if (apiResponseData.ticket) {
+        ticketData = apiResponseData.ticket;
+      } else if (apiResponseData.data) {
+        ticketData = apiResponseData.data;
+        if (apiResponseData.data.ticket) {
+          ticketData = apiResponseData.data.ticket;
+        }
+      } else if (apiResponseData.success && apiResponseData.ticket) {
+        ticketData = apiResponseData.ticket;
+      } else if (apiResponseData.success && apiResponseData.data) {
+        ticketData = apiResponseData.data;
+      } else {
+        ticketData = apiResponseData;
       }
+
+      console.log("Extracted ticketData:", ticketData);
+
+      // Extract IDs from ticketData
+      if (ticketData) {
+        backendId = ticketData.id || ticketData.ticket_id || ticketData.ticketId;
+        ticketNumber = ticketData.ticket_number || ticketData.ticketNumber || 
+                      ticketData.ticket_no || ticketData.reference_number;
+      }
+
+      // If still no ID, try direct response keys
+      if (!backendId) {
+        backendId = apiResponseData.id || apiResponseData.ticket_id;
+        ticketNumber = apiResponseData.ticket_number || apiResponseData.ticketNumber;
+      }
+
+      console.log(
+        "Final extracted - backendId:",
+        backendId,
+        "ticketNumber:",
+        ticketNumber,
+      );
 
       if (!backendId) {
-        Alert.alert(
-          "Warning",
-          "Ticket created but no valid ticket ID received from server.",
-        );
-        setIsSubmittingTicket(false);
-        return;
+        backendId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        console.warn("No backend ID received, using temporary ID:", backendId);
       }
 
-      // ============ CREATE TICKET WITH PROPER IDS ============
+      // Format the ticket number for display
+      const displayTicketNumber = formatTicketNumber(ticketNumber, backendId);
+
+      // Create ticket object for local storage
       const newTicket = {
         id: backendId,
         backendId: backendId,
-        ticketNumber: ticketNumber || `TKT-${backendId}`,
+        ticketNumber: displayTicketNumber,
         subject: ticketSubject,
         description: `Support request: ${ticketSubject}`,
         status: "submitted",
@@ -1643,19 +1526,11 @@ const ChatBot = () => {
         category: "Technical Support",
         createdAt: new Date(),
         updatedAt: new Date(),
-        // Use saved attachments from API if available, otherwise use local ones
-        attachments:
-          savedAttachments.length > 0
-            ? savedAttachments.map((att) => ({
-                uri: att.url || att.uri || att,
-                name: att.name || `attachment_${Date.now()}`,
-                type: "image",
-              }))
-            : ticketAttachments.map((att) => ({
-                uri: att.uri,
-                name: att.name,
-                type: "image",
-              })),
+        attachments: ticketAttachments.map((att) => ({
+          uri: att.uri,
+          name: att.name,
+          type: "image",
+        })),
         assignedTo: null,
         lastResponse: null,
         responseCount: 0,
@@ -1674,7 +1549,7 @@ const ChatBot = () => {
         syncDate: new Date().toISOString(),
       };
 
-      // ============ SAVE TO ASYNCSTORAGE ============
+      // Save to AsyncStorage
       const userTicketsKey = getUserTicketsKey(user.id);
       const existingTicketsJson = await AsyncStorage.getItem(userTicketsKey);
       let ticketsArray = [];
@@ -1690,17 +1565,21 @@ const ChatBot = () => {
         }
       }
 
+      // Remove any existing ticket with same ID
       ticketsArray = ticketsArray.filter(
         (t) => t.id !== backendId && t.backendId !== backendId,
       );
+
+      // Add new ticket to beginning
       ticketsArray.unshift(newTicket);
       await AsyncStorage.setItem(userTicketsKey, JSON.stringify(ticketsArray));
 
+      console.log("Ticket saved locally with ID:", backendId);
 
-      // ============ UPDATE CHAT MESSAGES ============
+      // Update chat messages
       const successMsg = {
         id: Date.now().toString(),
-        text: `✅ Ticket Created Successfully!\n\nTicket ID: ${ticketNumber || backendId}\nStatus: Submitted\nSubscription: ${selectedSubscription.plan?.name || "N/A"}\n\nYou can view this ticket in the Tickets section.`,
+        text: `✅ Ticket Created Successfully!\n\nTicket #: ${displayTicketNumber}\nStatus: Submitted\nSubscription: ${selectedSubscription.plan?.name || "N/A"}\n\nYou can view this ticket in the Tickets section.`,
         sender: "bot",
         timestamp: new Date(),
       };
@@ -1709,7 +1588,7 @@ const ChatBot = () => {
       setMessages(updatedMessages);
       saveMessages(updatedMessages);
 
-      // ============ RESET AND CLOSE ============
+      // Reset and close
       setTicketSubject("");
       setTicketAttachments([]);
       setTicketModalVisible(false);
@@ -1721,10 +1600,10 @@ const ChatBot = () => {
       setSelectedSubscription(null);
       setShowSubscriptionDropdown(false);
 
-      // ============ SHOW SUCCESS ALERT ============
+      // Show success alert
       Alert.alert(
         "Ticket Submitted! 🎫",
-        `Ticket ${ticketNumber || backendId} has been created successfully.\n\nOur support team will review it and contact you soon.`,
+        `Ticket #${displayTicketNumber} has been created successfully.\n\nOur support team will review it and contact you soon.`,
         [
           {
             text: "View Tickets",
@@ -1739,13 +1618,17 @@ const ChatBot = () => {
         ],
       );
     } catch (error) {
-      Alert.alert("Error", "An unexpected error occurred. Please try again.");
+      console.log("Submit ticket error:", error);
+      Alert.alert(
+        "Error",
+        error.message || "An unexpected error occurred. Please try again.",
+      );
     } finally {
       setIsSubmittingTicket(false);
     }
   };
 
-  // ==================== FIXED: Open ticket form ====================
+  // Open ticket form
   const openTicketForm = () => {
     const lastUserMessage = messages
       .filter((m) => m.sender === "user")
@@ -1757,7 +1640,7 @@ const ChatBot = () => {
     setShowTicketPrompt(false);
   };
 
-  // ==================== FIXED: Handle ticket attachment ====================
+  // Handle ticket attachment
   const pickTicketImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -1778,14 +1661,16 @@ const ChatBot = () => {
           },
         ]);
       }
-    } catch (error) {}
+    } catch (error) {
+      console.log("Error picking image:", error);
+    }
   };
 
   const removeTicketAttachment = (id) => {
     setTicketAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
-  // ==================== FIXED: Render subscription dropdown ====================
+  // Render subscription dropdown
   const renderSubscriptionDropdown = () => (
     <View style={styles.dropdownContainer}>
       <TouchableOpacity
@@ -1883,7 +1768,7 @@ const ChatBot = () => {
     </View>
   );
 
-  // ==================== FIXED: Render message ====================
+  // Render message
   const renderMessage = ({ item }) => {
     const isBot = item.sender === "bot";
 
@@ -1927,7 +1812,7 @@ const ChatBot = () => {
     );
   };
 
-  // ==================== FIXED: Render contact info ====================
+  // Render contact info
   const renderContactInfo = () => {
     if (!showContactInfo) return null;
 
@@ -1935,6 +1820,7 @@ const ChatBot = () => {
       <View style={styles.contactInfoBox}>
         <Text style={styles.contactTitle}>Contact Support</Text>
         <Text style={styles.contactDetail}>📞 Phone: {contactInfo.phone}</Text>
+        <Text style={styles.contactDetail}>📞 Phone: {contactInfo.phone2}</Text>
         <Text style={styles.contactDetail}>📧 Email: {contactInfo.email}</Text>
         <Text style={styles.contactNote}>
           For immediate assistance, please call or create a support ticket.
@@ -1943,7 +1829,7 @@ const ChatBot = () => {
     );
   };
 
-  // ==================== FIXED: Render list footer ====================
+  // Render list footer
   const renderListFooter = () => {
     return (
       <>
@@ -2204,12 +2090,10 @@ const ChatBot = () => {
                 <TouchableOpacity
                   style={[
                     styles.sendButton,
-                    !inputText.trim() &&
-                      attachments.length === 0 &&
-                      styles.sendButtonDisabled,
+                    !inputText.trim() && styles.sendButtonDisabled,
                   ]}
                   onPress={() => sendMessage()}
-                  disabled={!inputText.trim() && attachments.length === 0}
+                  disabled={!inputText.trim()}
                 >
                   <Ionicons name="send" size={20} color={colors.white} />
                 </TouchableOpacity>

@@ -18,11 +18,13 @@ import { useRouter } from "expo-router";
 import { useTheme } from "../../../theme/ThemeContext";
 import { useFocusEffect } from "expo-router";
 import { useCallback } from "react";
+import { useUserStore } from "../../../store/user";
 
 export default function Notifications() {
   const router = useRouter();
   const { mode } = useTheme();
   const systemColorScheme = useColorScheme();
+  const user = useUserStore((state) => state.user);
 
   // Determine effective mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
@@ -90,40 +92,83 @@ export default function Notifications() {
     }, [notifications.length]),
   );
 
-  const loadNotifications = async () => {
-    try {
-      setLoading(true);
-      const token = await AsyncStorage.getItem("token");
-
-      if (!token) return;
-
-      const res = await fetch(
-        "https://staging.kazibufastnet.com/api/app/notifications",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        },
-      );
-
-      const json = await res.json();
-      const fetchedNotifications = json.notifications || [];
-
-      const formatted = fetchedNotifications.map((n) => ({
-        ...n,
-        isRead: n.is_read === 1,
-        timestamp: n.created_at,
-      }));
-
-      setNotifications(formatted);
-      setHasUnread(formatted.some((n) => !n.isRead));
-    } catch (e) {
-      Alert.alert("Error", "Failed to load notifications");
-    } finally {
-      setLoading(false); // ✅ always stop loading
+const loadNotifications = async () => {
+  try {
+    setLoading(true);
+    const token = await AsyncStorage.getItem("token");
+    
+    if (!token) {
+      Alert.alert("Session Expired", "Please login again");
+      router.replace("/(auth)/(login)/login");
+      return;
     }
-  };
+
+    if (!user || !user.branch) {
+      console.log("Waiting for user data...");
+      setLoading(false);
+      return;
+    }
+
+    const subdomain = user.branch.subdomain;
+    
+    const res = await fetch(
+      `https://${subdomain}.kazibufastnet.com/api/app/notifications`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      },
+    );
+
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+
+    const json = await res.json();
+    
+    // ✅ Debug: Log the actual response structure
+    console.log("API Response:", json);
+    
+    // ✅ Check different possible response structures
+    let fetchedNotifications = [];
+    
+    if (Array.isArray(json)) {
+      // Response is directly an array
+      fetchedNotifications = json;
+    } else if (json.notifications && Array.isArray(json.notifications)) {
+      // Response has notifications property
+      fetchedNotifications = json.notifications;
+    } else if (json.data && Array.isArray(json.data)) {
+      // Response has data property (common pagination format)
+      fetchedNotifications = json.data;
+    } else if (json.notifications && json.notifications.data) {
+      // Response has notifications.data (Laravel pagination)
+      fetchedNotifications = json.notifications.data;
+    } else {
+      // If we can't find the array, log the structure and use empty array
+      console.warn("Unexpected API response structure:", json);
+      fetchedNotifications = [];
+    }
+
+    const formatted = fetchedNotifications.map((n) => ({
+      ...n,
+      isRead: n.is_read === 1,
+      timestamp: n.created_at || n.createdAt || n.timestamp || new Date().toISOString(),
+      title: n.title || n.subject || "Notification",
+      body: n.body || n.message || n.content || "No additional details available.",
+      id: n.id || n.notification_id || Math.random().toString(),
+    }));
+
+    setNotifications(formatted);
+    setHasUnread(formatted.some((n) => !n.isRead));
+  } catch (e) {
+    console.error("Load notifications error:", e);
+    Alert.alert("Error", "Failed to load notifications");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -146,7 +191,7 @@ export default function Notifications() {
     setSelectMode(false);
   };
 
-  const deleteSelected = () => {
+  const deleteSelected = async () => {
     if (selected.length === 0) return;
 
     Alert.alert(
@@ -166,8 +211,15 @@ export default function Notifications() {
                 return;
               }
 
+              if (!user || !user.branch) {
+                Alert.alert("Error", "User information not available");
+                return;
+              }
+
+              const subdomain = user.branch.subdomain;
+
               const res = await fetch(
-                "https://staging.kazibufastnet.com/api/app/notifications/delete",
+                `https://${subdomain}.kazibufastnet.com/api/app/notifications/delete`,
                 {
                   method: "POST",
                   headers: {
@@ -176,7 +228,7 @@ export default function Notifications() {
                     "Content-Type": "application/json",
                   },
                   body: JSON.stringify({
-                    selected: selected, // 👈 BULK IDS
+                    selected: selected,
                   }),
                 },
               );
@@ -186,13 +238,13 @@ export default function Notifications() {
                 throw new Error(text);
               }
 
-              // ✅ UPDATE UI IMMEDIATELY
+              // Update UI immediately
               setNotifications((prev) =>
                 prev.filter((n) => !selected.includes(n.id)),
               );
-
               clearSelection();
 
+              // Refresh to get latest data
               loadNotifications();
 
               Alert.alert(
@@ -219,43 +271,60 @@ export default function Notifications() {
     );
   };
 
-  const markAllAsRead = async () => {
-    try {
-      const token = await AsyncStorage.getItem("token");
-      if (!token) {
-        Alert.alert("Session Expired", "Please login again");
-        router.replace("/(auth)/(login)/login");
-        return;
-      }
-
-      const res = await fetch(
-        "https://staging.kazibufastnet.com/api/app/notifications/marked_all_as_red",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-            "Content-Type": "application/json", // ✅ REQUIRED
-          },
-          body: JSON.stringify({
-            selected: notifications.map((n) => n.id), // ✅ SEND ALL IDS
-          }),
-        },
-      );
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text);
-      }
-
-      // ✅ UPDATE UI IMMEDIATELY
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-      setHasUnread(false);
-    } catch (error) {
-      console.error("Mark all as read error:", error);
-      Alert.alert("Error", "Failed to mark all as read");
+const markAllAsRead = async () => {
+  try {
+    const token = await AsyncStorage.getItem("token");
+    if (!token) {
+      Alert.alert("Session Expired", "Please login again");
+      router.replace("/(auth)/(login)/login");
+      return;
     }
-  };
+
+    if (!user || !user.branch) {
+      Alert.alert("Error", "User information not available");
+      return;
+    }
+
+    const subdomain = user.branch.subdomain;
+
+    // ✅ Fix: Changed from 'marked_all_as_red' to 'mark_all_as_read'
+    const res = await fetch(
+      `https://${subdomain}.kazibufastnet.com/api/app/notifications/mark_all_as_read`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          selected: notifications.map((n) => n.id),
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text);
+    }
+
+    // Update UI immediately
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setHasUnread(false);
+    
+    Alert.alert("Success", "All notifications marked as read");
+  } catch (error) {
+    console.error("Mark all as read error:", error);
+    Alert.alert("Error", "Failed to mark all as read");
+  }
+};
+
+// ✅ Fix useFocusEffect - always load when screen focuses
+useFocusEffect(
+  useCallback(() => {
+    loadNotifications();
+  }, []), // Empty dependency array - runs every time screen focuses
+);
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);

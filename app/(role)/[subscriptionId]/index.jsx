@@ -116,7 +116,7 @@ const SubscriptionDetailsScreen = () => {
       if (!token) throw new Error("No auth token");
 
       const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/billings/invoice/${billingItem.id}`,
+        `https://tub.kazibufastnet.com/api/app/billings/invoice/${billingItem.id}`,
         {
           method: "GET",
           headers: {
@@ -291,9 +291,10 @@ const SubscriptionDetailsScreen = () => {
     try {
       const token = await getToken();
       if (!token) throw new Error("No token found");
+      const subdomain= user.branch.subdomain;
 
       const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/subscriptions/view/${subscription.id}`,
+        `https://${subdomain}.kazibufastnet.com/api/app/subscriptions/view/${subscription.id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -614,20 +615,6 @@ const SubscriptionDetailsScreen = () => {
                 </Text>
                 <Text style={[styles.detailValue, { color: colors.text }]}>
                   {formatCurrency(subscription.installation_fee)}
-                </Text>
-              </View>
-
-              <View
-                style={[
-                  styles.detailRow,
-                  { borderBottomColor: colors.primary + "05" },
-                ]}
-              >
-                <Text style={[styles.detailLabel, { color: colors.textLight }]}>
-                  Payment Mode:
-                </Text>
-                <Text style={[styles.detailValue, { color: colors.text }]}>
-                  {subscription.installation_fee_payment_mode || "N/A"}
                 </Text>
               </View>
             </View>

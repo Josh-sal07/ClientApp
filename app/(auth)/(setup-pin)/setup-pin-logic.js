@@ -103,7 +103,7 @@ export default function useSetupPinLogic() {
         : phone.replace(/^0/, "");
 
       const response = await fetch(
-        "https://staging.kazibufastnet.com/api/app/setup_pin",
+        "https://tub.kazibufastnet.com/api/app/setup_pin",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

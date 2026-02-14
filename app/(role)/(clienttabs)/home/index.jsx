@@ -102,7 +102,7 @@ const Home = () => {
       danger: "#FF6B6B",
       surface: "#FFFFFF",
       background: "#F5F8FA",
-      text: "#1E293B",
+      text: "#136350",
       textLight: "#64748B",
       announcementBg: "#FFF5F5",
       announcementBorder: "#FF6B6B",
@@ -114,6 +114,7 @@ const Home = () => {
       gradientAlt: "#1de7e3",
       tabBarGradientStart: "#98eced",
       tabBarGradientEnd: "#21c7c1",
+      quickActions: "#136350",
     },
     dark: {
       primary: "#1f6f68",
@@ -141,6 +142,7 @@ const Home = () => {
       gradientAlt1: "#032829",
       tabBarGradientStart: "#000000",
       tabBarGradientEnd: "#032829",
+      quickActions: "#FFFFFF",
     },
   };
 
@@ -207,84 +209,103 @@ const Home = () => {
       title: "Tickets",
       icon: require("../../../../assets/icons/ticket.png"),
       route: "/(role)/(clienttabs)/tickets",
-      color: colors.secondary,
+      color: colors.primary,
+    },
+    {
+      title: "Upgrade Plan",
+      icon: require("../../../../assets/icons/plan.png"),
+      route: "/(role)/(subscriptionPlan)/plan",
+      color: colors.primary,
+    },
+    {
+      title: "Tickets",
+      icon: require("../../../../assets/icons/ticket.png"),
+      route: "/(role)/(clienttabs)/tickets",
+      color: colors.primary,
+    },
+    {
+      title: "Subscriptions",
+      icon: require("../../../../assets/icons/receipt.png"),
+      route: "/(role)/(clienttabs)/subscriptions",
+      color: colors.primary,
+    },
+    {
+      title: "Tickets",
+      icon: require("../../../../assets/icons/ticket.png"),
+      route: "/(role)/(clienttabs)/tickets",
+      color: colors.primary,
+    },
+    {
+      title: "Subscriptions",
+      icon: require("../../../../assets/icons/receipt.png"),
+      route: "/(role)/(clienttabs)/subscriptions",
+      color: colors.primary,
+    },
+    {
+      title: "Tickets",
+      icon: require("../../../../assets/icons/ticket.png"),
+      route: "/(role)/(clienttabs)/tickets",
+      color: colors.primary,
     },
   ];
 
   // Fetch all data from the single /api/app/home endpoint
-  const fetchHomeData = async (isRefresh = false) => {
-    try {
-      if (!isRefresh) {
-        setLoadingBills(true);
-      } else {
-        setRefreshing(true);
-      }
+ const fetchHomeData = async (isRefresh = false) => {
+  try {
+    if (!isRefresh) setLoadingBills(true);
+    else setRefreshing(true);
 
-      const token = await AsyncStorage.getItem("token");
-      if (!token) {
-        console.log("No token found");
-        return;
-      }
+    const token = await AsyncStorage.getItem("token");
+    if (!token) return;
 
-      // Make single API call to /api/app/home
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/home`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-        },
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log("API Error:", errorText);
-        throw new Error(`API Error: ${response.status}`);
-      }
-
-      const responseText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.log("Parse Error:", parseError);
-        throw new Error("Failed to parse API response");
-      }
-
-      console.log("Home API Data:", data);
-
-      // Extract notifications count
-      const notificationsCount = data?.notifications || 0;
-      setUnreadNotifications(notificationsCount);
-
-      // Extract credit points from user object
-      const userCreditValue = data?.user?.credit_points || 0;
-      setUserCredit(userCreditValue);
-
-      // Extract announcements
-      const announcementsData = Array.isArray(data?.announcement)
-        ? data.announcement
-        : [];
-      setAnnouncements(announcementsData);
-
-      // Extract and process billings data
-      const billings = Array.isArray(data?.billings) ? data.billings : [];
-      processBillingsData(billings);
-    } catch (err) {
-      console.error("Error fetching home data:", err);
-      // For demo purposes, show mock data when API fails
-      if (!isRefresh) {
-        showMockData();
-      }
-      setUpcomingBills([]);
-    } finally {
-      setLoadingBills(false);
-      setRefreshing(false);
+    // 🔐 IMPORTANT GUARD
+    if (!user?.branch?.subdomain) {
+      console.warn("User branch not loaded yet");
+      return;
     }
-  };
+
+    const subdomain = user.branch.subdomain;
+
+    const response = await fetch(
+      `https://${subdomain}.kazibufastnet.com/api/app/home`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Failed to fetch home data");
+    }
+
+    const data = await response.json();
+
+    // 🔔 Notifications
+    setUnreadNotifications(data?.notifications || 0);
+
+    // 💳 Credits
+    setUserCredit(data?.user?.credit_points || 0);
+
+    // 📢 Announcements
+    setAnnouncements(Array.isArray(data?.announcement) ? data.announcement : []);
+
+    // 🧾 Billings
+    processBillingsData(Array.isArray(data?.billings) ? data.billings : []);
+  } catch (err) {
+    console.error("Error fetching home data:", err);
+    if (!isRefresh) showMockData();
+    setUpcomingBills([]);
+  } finally {
+    setLoadingBills(false);
+    setRefreshing(false);
+  }
+};
+
 
   // Process billings data from the API
   const processBillingsData = (billings) => {
@@ -350,6 +371,7 @@ const Home = () => {
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 7);
 
+    
     const mockBills = [
       {
         id: 1,
@@ -535,7 +557,7 @@ const Home = () => {
               <View style={styles.creditAmountContainer}>
                 {showAmount ? (
                   <Text style={[styles.creditAmount, { color: colors.white }]}>
-                    {formatCurrency(userCredit)}
+                    {formatCurrency(user?.credit_points)}
                   </Text>
                 ) : (
                   <Text style={[styles.hiddenAmount, { color: colors.white }]}>
@@ -576,9 +598,9 @@ const Home = () => {
           />
         }
         onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-                  { useNativeDriver: false },
-                )}
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false },
+        )}
       >
         {/* How can we help you today? Section */}
         <View style={styles.sectionContainer}>
@@ -599,16 +621,21 @@ const Home = () => {
                     <View
                       style={[
                         styles.actionIconContainer,
-                        { backgroundColor: action.color + "20" },
                       ]}
                     >
                       <Image
                         source={action.icon}
-                        style={styles.actionIcon}
+                        style={[
+                          styles.actionIcon,
+                          {
+                            tintColor:
+                              effectiveMode === "light" ? colors.primary : "#6dffe4",
+                          },
+                        ]}
                         resizeMode="contain"
                       />
                     </View>
-                    <Text style={[styles.actionTitle, { color: colors.text }]}>
+                    <Text style={[styles.actionTitle, { color: colors.quickActions }]}>
                       {action.title}
                     </Text>
                   </TouchableOpacity>
@@ -1040,17 +1067,18 @@ const styles = StyleSheet.create({
   },
   // Quick Actions with rows
   quickActionsContainer: {
-    marginBottom: 8,
+    marginBottom: 1,
   },
   quickActionsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 1,
   },
   quickActionCard: {
     flex: 1,
     alignItems: "center",
     marginHorizontal: 4,
+    borderRadius: 10,
   },
   emptyActionCard: {
     flex: 1,

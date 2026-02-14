@@ -19,10 +19,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeContext";
+import { useUserStore } from "../../../store/user";
 
 const { width } = Dimensions.get("window");
 
 export default function ChangeMPINPage() {
+   const user = useUserStore((state) => state.user);
   const router = useRouter();
   const { mode } = useTheme();
   const [pin, setPin] = useState("");
@@ -188,9 +190,9 @@ export default function ChangeMPINPage() {
       const formattedPhone = phone.startsWith("+")
         ? phone
         : phone.replace(/^0/, "");
-
+      const subdomain = user.branch.subdomain
       const response = await fetch(
-        "https://staging.kazibufastnet.com/api/app/setup_pin",
+        `https://${subdomain}.kazibufastnet.com/api/app/setup_pin`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

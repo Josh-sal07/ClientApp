@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useUserStore } from "../../../store/user";
+import { useTheme } from "../../../theme/ThemeContext";
  
 
 const { width, height } = Dimensions.get("window");
@@ -24,11 +25,12 @@ const BillingHistoryScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   const user = useUserStore((state) => state.user);
+  const { colors } = useTheme();
 
   const subscription = params.subscription
     ? JSON.parse(params.subscription)
     : null;
-  const colors = params.colors ? JSON.parse(params.colors) : null;
+  
 
   const [selectedBill, setSelectedBill] = useState(null);
   const [showReceipt, setShowReceipt] = useState(false);
@@ -213,133 +215,172 @@ const BillingHistoryScreen = () => {
   };
   
   // FIXED: handleCardPressHistory function
-  const handleCardPressHistory = async (item) => {
+// FIXED: handleCardPressHistory function
+const handleCardPressHistory = async (item) => {
+  // Set loading state
+  setReceiptLoading(true);
+  setSelectedBill(item);
 
-    // Set loading state
-    setReceiptLoading(true);
-    setSelectedBill(item);
-
-    try {
-      const token = await getToken();
-      if (token) {
-        // Fetch the detailed bill data
-        const response = await fetch(
-          `https://staging.kazibufastnet.com/api/app/billings/view/${item.id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
+  try {
+    const token = await getToken();
+    const subdomain = user.branch.subdomain;
+    if (token) {
+      // Fetch the detailed bill data
+      const response = await fetch(
+        `https://${subdomain}.kazibufastnet.com/api/app/billings/view/${item.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
           },
-        );
+        },
+      );
 
-        if (response.ok) {
-          const data = await response.json();
+      if (response.ok) {
+        const data = await response.json();
 
-          // Extract address and contact
-          let address = data.address || "Address not available";
-          let contactNumber = data.contactNumber || "Contact not available";
-
-          // Get billing data
-          const billingData = data.billing || data.data || item;
-
-          // Get payment method - prefer from detailed data, fallback to item
-          const rawPaymentMode = billingData.payment_mode || item.payment_mode;
-
-          // Format the payment method with the bill item for context
-          let paymentMethod = formatPaymentMethod(rawPaymentMode, billingData);
-
-          // Create merged bill object
-          const mergedBill = {
-            ...billingData,
-            address,
-            contactNumber,
-            payment_mode: rawPaymentMode,
-          };
-
-          setSelectedBill(mergedBill);
-
-          // Generate receipt data
-          const newReceiptData = {
-            companyName: "KAZIBUFAST NETWORKS",
-            companyAddress: address,
-            companyPhone: contactNumber,
-            accountNumber:
-              mergedBill.reference_number ||
-              mergedBill.account_number ||
-              item.account_number ||
-              "N/A",
-            customerName: user?.name || "Customer Name",
-            dueDate: formatDate(mergedBill.due_date || item.due_date),
-            paymentMethod: paymentMethod,
-            paymentDate:
-              formatDate(mergedBill.payment_date || item.payment_date) ||
-              formatDate(new Date()),
-            previousBalance:
-              mergedBill.previous_balance || item.previous_balance || 0,
-            currentCharges: mergedBill.amount_due || item.amount_due || 0,
-            totalDue:
-              mergedBill.total_due ||
-              mergedBill.amount_due ||
-              item.total_due ||
-              item.amount_due ||
-              0,
-            discount: mergedBill.discount || item.discount || 0,
-            penalty: mergedBill.penalty || item.penalty || 0,
-            paymentAmount: mergedBill.amount_paid || item.amount_paid || 0,
-          };
-          setReceiptData(newReceiptData);
-        } else {
-          generateReceiptFromItem(item);
+        // FIXED: Extract address and contact properly from objects
+        let address = "Address not available";
+        let contactNumber = "Contact not available";
+        
+        // Check if address is an object with value property
+        if (data.address) {
+          if (typeof data.address === 'object' && data.address.value) {
+            address = data.address.value;
+          } else if (typeof data.address === 'string') {
+            address = data.address;
+          }
         }
+        
+        // Check if contactNumber is an object with value property
+        if (data.contactNumber) {
+          if (typeof data.contactNumber === 'object' && data.contactNumber.value) {
+            contactNumber = data.contactNumber.value;
+          } else if (typeof data.contactNumber === 'string') {
+            contactNumber = data.contactNumber;
+          }
+        }
+
+        // Get billing data
+        const billingData = data.billing || data.data || item;
+
+        // Get payment method - prefer from detailed data, fallback to item
+        const rawPaymentMode = billingData.payment_mode || item.payment_mode;
+
+        // Format the payment method with the bill item for context
+        let paymentMethod = formatPaymentMethod(rawPaymentMode, billingData);
+
+        // Create merged bill object
+        const mergedBill = {
+          ...billingData,
+          address, // This is now a string, not an object
+          contactNumber, // This is now a string, not an object
+          payment_mode: rawPaymentMode,
+        };
+
+        setSelectedBill(mergedBill);
+
+        // Generate receipt data
+        const newReceiptData = {
+          companyName: "KAZIBUFAST NETWORKS",
+          companyAddress: address, // Use the string value
+          companyPhone: contactNumber, // Use the string value
+          accountNumber:
+            mergedBill.reference_number ||
+            mergedBill.account_number ||
+            item.account_number ||
+            "N/A",
+          customerName: user?.name || "Customer Name",
+          dueDate: formatDate(mergedBill.due_date || item.due_date),
+          paymentMethod: paymentMethod,
+          paymentDate:
+            formatDate(mergedBill.payment_date || item.payment_date) ||
+            formatDate(new Date()),
+          previousBalance:
+            mergedBill.previous_balance || item.previous_balance || 0,
+          currentCharges: mergedBill.amount_due || item.amount_due || 0,
+          totalDue:
+            mergedBill.total_due ||
+            mergedBill.amount_due ||
+            item.total_due ||
+            item.amount_due ||
+            0,
+          discount: mergedBill.discount || item.discount || 0,
+          penalty: mergedBill.penalty || item.penalty || 0,
+          paymentAmount: mergedBill.amount_paid || item.amount_paid || 0,
+        };
+        setReceiptData(newReceiptData);
       } else {
         generateReceiptFromItem(item);
       }
-    } catch (error) {
+    } else {
       generateReceiptFromItem(item);
-    } finally {
-      // Hide loading and show receipt after a brief delay for smooth transition
-      setTimeout(() => {
-        setReceiptLoading(false);
-        setShowReceipt(true);
-      }, 300);
     }
-  };
+  } catch (error) {
+    generateReceiptFromItem(item);
+  } finally {
+    // Hide loading and show receipt after a brief delay for smooth transition
+    setTimeout(() => {
+      setReceiptLoading(false);
+      setShowReceipt(true);
+    }, 300);
+  }
+};
 
   // FIXED: Helper function to generate receipt from item data
-  const generateReceiptFromItem = (item) => {
+// FIXED: Helper function to generate receipt from item data
+const generateReceiptFromItem = (item) => {
+  // Extract payment method - item.payment_mode has the data
+  const rawPaymentMode = item.payment_mode;
 
-    // Extract payment method - item.payment_mode has the data
-    const rawPaymentMode = item.payment_mode;
+  // Format the payment method with the item for context
+  let paymentMethod = formatPaymentMethod(rawPaymentMode, item);
 
-    // Format the payment method with the item for context
-    let paymentMethod = formatPaymentMethod(rawPaymentMode, item);
+  const receiptPlan = item?.plan?.name || subscription?.plan?.name || "N/A";
 
-    const receiptPlan = item?.plan?.name || subscription?.plan?.name || "N/A";
+  // FIXED: Check if address/contact are objects and extract their values
+  let address = "Address not available";
+  let contactNumber = "Contact not available";
+  
+  if (item.address) {
+    if (typeof item.address === 'object' && item.address.value) {
+      address = item.address.value;
+    } else if (typeof item.address === 'string') {
+      address = item.address;
+    }
+  }
+  
+  if (item.contactNumber) {
+    if (typeof item.contactNumber === 'object' && item.contactNumber.value) {
+      contactNumber = item.contactNumber.value;
+    } else if (typeof item.contactNumber === 'string') {
+      contactNumber = item.contactNumber;
+    }
+  }
 
-    const basicReceiptData = {
-      companyName: "KAZIBUFAST NETWORKS",
-      companyAddress: "Address not available",
-      companyPhone: "Contact not available",
-      accountNumber:
-        item.account_number ||
-        item.reference_number ||
-        item.account_id ||
-        subscription?.subscription_id ||
-        "N/A",
-      customerName: user?.name || "Customer Name",
-      dueDate: formatDate(item.due_date),
-      paymentMethod: paymentMethod,
-      paymentDate: formatDate(item.payment_date) || formatDate(new Date()),
-      previousBalance: item.previous_balance || 0,
-      currentCharges: item.amount_due || 0,
-      totalDue: item.total_due || item.amount_due,
-      discount: item.discount || 0,
-      penalty: item.penalty || 0,
-      paymentAmount: item.amount_paid || 0,
-    };
-    setReceiptData(basicReceiptData);
+  const basicReceiptData = {
+    companyName: "KAZIBUFAST NETWORKS",
+    companyAddress: address, // Use the extracted string
+    companyPhone: contactNumber, // Use the extracted string
+    accountNumber:
+      item.account_number ||
+      item.reference_number ||
+      item.account_id ||
+      subscription?.subscription_id ||
+      "N/A",
+    customerName: user?.name || "Customer Name",
+    dueDate: formatDate(item.due_date),
+    paymentMethod: paymentMethod,
+    paymentDate: formatDate(item.payment_date) || formatDate(new Date()),
+    previousBalance: item.previous_balance || 0,
+    currentCharges: item.amount_due || 0,
+    totalDue: item.total_due || item.amount_due,
+    discount: item.discount || 0,
+    penalty: item.penalty || 0,
+    paymentAmount: item.amount_paid || 0,
   };
+  setReceiptData(basicReceiptData);
+};
 
   const renderReceiptRow = (label, value, isLast = false) => {
     return (

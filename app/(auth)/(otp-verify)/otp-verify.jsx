@@ -91,7 +91,7 @@ const handleVerifyOtp = async () => {
     const clean = phoneNumber.replace(/\D/g, "");
 
     const response = await fetch(
-      "https://staging.kazibufastnet.com/api/app/otp",
+      "https://tub.kazibufastnet.com/api/app/otp",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -160,7 +160,7 @@ const handleVerifyOtp = async () => {
       setResendTimer(30);
       setCanResend(false);
 
-      await fetch("https://staging.kazibufastnet.com/api/app/verify_number", {
+      await fetch("https://tub.kazibufastnet.com/api/app/verify_number", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mobile_number: clean }),

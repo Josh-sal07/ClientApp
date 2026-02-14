@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+// phone-verify-logic.js
+import { useState } from "react";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -24,7 +25,7 @@ export default function usePhoneVerifyLogic() {
 
   const handleSignIn = async () => {
     // Check if we have an existing phone number
-    const existingPhone = await AsyncStorage.getItem("phone");
+    const existingPhone = await AsyncStorage.getItem("user_phone");
     if (existingPhone) {
       // Use existing phone for sign in - STILL NEED OTP
       router.replace({
@@ -37,7 +38,7 @@ export default function usePhoneVerifyLogic() {
     } else {
       // Clear any temp data and go to OTP
       await AsyncStorage.removeItem("temp_phone");
-      router.replace("/(auth)/(login)/login")
+      router.replace("/(auth)/(login)/login");
     }
   };
 
@@ -53,16 +54,19 @@ export default function usePhoneVerifyLogic() {
     try {
       setLoading(true);
       
-      // Save phone temporarily for OTP verification
+      // Save phone permanently for future logins
+      await AsyncStorage.setItem("user_phone", clean);
+      
+      // Also save temporarily for OTP verification
       await AsyncStorage.setItem("temp_phone", clean);
 
       // Check if this phone has existing PIN setup locally
       const localPinSet = await AsyncStorage.getItem(`pin_set_${clean}`);
       const hasLocalPin = localPinSet === "true";
 
-      // Always send OTP, even if phone has PIN
+      // Always send OTP, even if phone has PIN`
       const res = await fetch(
-        "https://staging.kazibufastnet.com/api/app/verify_number",
+        "https://tub.kazibufastnet.com/api/app/verify_number",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

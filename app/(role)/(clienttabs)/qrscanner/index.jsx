@@ -183,12 +183,6 @@ export default function QRScannerScreen() {
           <Text style={styles.instruction}>
             Position the QR code within the frame
           </Text>
-          
-          <TouchableOpacity 
-            style={styles.manualButton}
-            onPress={handleManualInput}
-          >
-          </TouchableOpacity>
 
           {scanned && (
             <TouchableOpacity 

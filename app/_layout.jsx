@@ -8,8 +8,9 @@ import AnimatedSplash from "../components/AnimatedSplash";
 import { ThemeProvider } from "../theme/ThemeContext";
 import { useUserStore } from "../store/user";
 import useSessionTimeout from "../hooks/useSessionTimeout";
+import SessionExpiredModal from "../components/SessionExpiredModal";
 
-// 🔒 GLOBAL GUARD — survives remounts
+// 🔒 GLOBAL GUARD
 let splashShown = false;
 
 SplashScreen.preventAutoHideAsync();
@@ -19,47 +20,83 @@ export default function RootLayout() {
   const loadUser = useUserStore((s) => s.loadUser);
 
   const [showSplash, setShowSplash] = useState(!splashShown);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const hasNavigated = useRef(false);
 
+  // ✅ CONDITIONAL SESSION TIMEOUT - Only enabled when authenticated
+  const { expired, setExpired } = useSessionTimeout({
+    enabled: isAuthenticated,
+    timeoutMinutes: 15,
+  });
+
   useEffect(() => {
-  if (!showSplash) {
-    checkAuth();
-  }
-}, [showSplash]);
-
-
-  useSessionTimeout();
+    if (!showSplash) {
+      checkAuth();
+    }
+  }, [showSplash]);
 
   const checkAuth = async () => {
     if (hasNavigated.current) return;
     hasNavigated.current = true;
 
     try {
+      // Check if user has a token (is logged in)
       const token = await AsyncStorage.getItem("token");
 
-      if (!token) {
-        router.replace("/(auth)/(login)/login");
+      if (token) {
+        // User has a token - check biometrics if enabled
+        const biometricEnabled = await AsyncStorage.getItem("biometric_enabled");
+        if (biometricEnabled === "true") {
+          const result = await LocalAuthentication.authenticateAsync({
+            promptMessage: "Unlock with Biometrics",
+            fallbackLabel: "Use MPIN",
+          });
+
+          if (!result.success) {
+            // Biometric failed - go back to login
+            router.replace("/(auth)/(login)/login");
+            return;
+          }
+        }
+
+        // User is authenticated
+        loadUser();
+        setIsAuthenticated(true);
+        router.replace("/(auth)/(login)");
         return;
       }
 
-      const biometricEnabled = await AsyncStorage.getItem("biometric_enabled");
-      if (biometricEnabled === "true") {
-        const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: "Unlock with Biometrics",
-          fallbackLabel: "Use MPIN",
-        });
-
-        if (!result.success) {
-          router.replace("/(auth)/(login)/login");
-          return;
-        }
+      // No token - check if phone number is stored (user has entered phone before)
+      const storedPhone = await AsyncStorage.getItem("user_phone");
+      
+      if (storedPhone) {
+        // User has previously entered a phone number - go to login
+        router.replace("/(auth)/(login)/login");
+      } else {
+        // First time user - go to phone verification
+        router.replace("/(auth)/(phone-verify)/phone-verify");
       }
-
-      loadUser();
-      router.replace("/(role)/(clienttabs)/home");
-    } catch {
-      router.replace("/(auth)/(login)/login");
+    } catch (error) {
+      console.error("Auth check error:", error);
+      // On error, try to check for stored phone
+      try {
+        const storedPhone = await AsyncStorage.getItem("user_phone");
+        if (storedPhone) {
+          router.replace("/(auth)/(login)/login");
+        } else {
+          router.replace("/(auth)/(phone-verify)/phone-verify");
+        }
+      } catch {
+        router.replace("/(auth)/(phone-verify)/phone-verify");
+      }
     }
+  };
+
+  // Reset auth state when session expires
+  const handleSessionExpired = () => {
+    setExpired(false);
+    setIsAuthenticated(false);
+    router.replace("/(auth)/(login)/login");
   };
 
   if (showSplash) {
@@ -67,9 +104,8 @@ export default function RootLayout() {
       <ThemeProvider>
         <AnimatedSplash
           onFinish={async () => {
-            splashShown = true;     // ✅ prevents re-show
+            splashShown = true;
             setShowSplash(false);
-            await checkAuth();
             await SplashScreen.hideAsync();
           }}
         />
@@ -80,6 +116,14 @@ export default function RootLayout() {
   return (
     <ThemeProvider>
       <Stack screenOptions={{ headerShown: false }} />
+
+      {/* ✅ CUSTOM SESSION ALERT - Only shows when authenticated */}
+      {isAuthenticated && (
+        <SessionExpiredModal
+          visible={expired}
+          onConfirm={handleSessionExpired}
+        />
+      )}
     </ThemeProvider>
   );
 }

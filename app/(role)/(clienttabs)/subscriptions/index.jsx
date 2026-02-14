@@ -36,26 +36,28 @@ const MySubscriptionsScreen = () => {
   const systemColorScheme = useColorScheme();
   const scrollY = sharedScrollY;
   const { focusSubscriptionId, focusBillingId } = useLocalSearchParams();
-  
+
   const subscriptionPositions = useRef({});
   const hasAutoFocused = useRef(false);
   const scrollViewRef = useRef(null);
 
   const [focusedSubId, setFocusedSubId] = useState(null);
   const glowAnim = useRef(new Animated.Value(0)).current;
-  
+
   // Subscription data state
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [creditsPaymentProcessing, setCreditsPaymentProcessing] = useState(false);
+  const [creditsPaymentProcessing, setCreditsPaymentProcessing] =
+    useState(false);
 
   // WebView payment states
   const [showWebView, setShowWebView] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
-  const [selectedSubscriptionForPayment, setSelectedSubscriptionForPayment] = useState(null);
+  const [selectedSubscriptionForPayment, setSelectedSubscriptionForPayment] =
+    useState(null);
   const [paymentUrl, setPaymentUrl] = useState("");
 
   // Loading states for navigation
@@ -117,59 +119,289 @@ const MySubscriptionsScreen = () => {
     }
   };
 
-  const fetchSubscriptionData = async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const token = await getToken();
-      if (!token) throw new Error("No token found. Please login again.");
-      if (!user || !user.id) throw new Error("User not found.");
+const fetchSubscriptionData = async () => {
+  console.log("🔄 === START FETCH SUBSCRIPTIONS ===");
+  console.log("📋 User Info:", {
+    exists: !!user,
+    id: user?.id,
+    email: user?.email,
+    branchExists: !!user?.branch,
+    subdomain: user?.branch?.subdomain || "NONE",
+  });
 
-      const response = await fetch(
-        `https://staging.kazibufastnet.com/api/app/subscriptions`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/json",
-          },
-        },
-      );
-
-      const data = await response.json();
-
-      if (data && data.subscription) {
-        const subscriptionData = data.subscription;
-        if (Array.isArray(subscriptionData)) {
-          setSubscriptions(subscriptionData);
-        } else if (subscriptionData.id) {
-          setSubscriptions([subscriptionData]);
-        } else {
-          setSubscriptions([]);
-        }
-      } else if (Array.isArray(data)) {
-        setSubscriptions(data);
-      } else {
-        setSubscriptions([]);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
+  try {
+    // 1. Get token
+    const token = await getToken();
+    console.log("🔑 Token Status:", token ? `Exists (${token.length} chars)` : "MISSING");
+    
+    if (!token) {
+      console.error("❌ No authentication token found");
+      setError("Please login again");
       setLoading(false);
       setRefreshing(false);
+      return;
     }
-  };
 
-  useEffect(() => {
+    // 2. Check subdomain
+    if (!user?.branch?.subdomain) {
+      console.error("❌ No subdomain in user branch");
+      console.log("📊 Full user object:", JSON.stringify(user, null, 2));
+      setError("Branch information is missing. Please contact support.");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    // 3. Prepare API URL
+    const subdomain = user.branch.subdomain;
+    const url = `https://${subdomain}.kazibufastnet.com/api/app/subscriptions`;
+    console.log("🌐 API URL:", url);
+
+    // 4. Create timeout mechanism
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.warn("⏰ Request timeout - aborting");
+      controller.abort();
+    }, 30000); // 30 seconds timeout
+
+    // 5. Make API request
+    console.log("📤 Sending request...");
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    
+    console.log("📥 Response received:", {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      headers: Object.fromEntries(response.headers.entries()),
+    });
+
+    // 6. Handle non-OK responses
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ Server error response:", errorText.substring(0, 500));
+      
+      let errorMessage = `Server error: ${response.status}`;
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch {
+        // Not JSON, use text as is
+        if (errorText.includes("Unauthorized") || errorText.includes("Invalid token")) {
+          errorMessage = "Your session has expired. Please login again.";
+        }
+      }
+      
+      throw new Error(errorMessage);
+    }
+
+    // 7. Parse response
+    const responseText = await response.text();
+    console.log("📄 Response text length:", responseText.length);
+    console.log("📄 Response preview:", responseText.substring(0, 300) + "...");
+
+    if (!responseText.trim()) {
+      console.error("❌ Empty response from server");
+      throw new Error("Server returned empty response");
+    }
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+      console.log("✅ JSON parsed successfully");
+      console.log("📊 Data type:", typeof data);
+      console.log("📊 Data keys:", Object.keys(data));
+    } catch (parseError) {
+      console.error("❌ JSON parse error:", parseError);
+      console.error("Raw response:", responseText);
+      throw new Error("Server returned invalid data format");
+    }
+
+    // 8. Check for API-level errors in response
+    if (data.error) {
+      console.error("❌ API error field:", data.error);
+      throw new Error(data.error);
+    }
+    
+    if (data.message && data.message.toLowerCase().includes('error')) {
+      console.error("❌ API error message:", data.message);
+      throw new Error(data.message);
+    }
+
+    // 9. Extract subscriptions from multiple possible structures
+    console.log("🔍 Searching for subscriptions in response...");
+    let subscriptionsArray = [];
+    let foundIn = null;
+
+    // Try all possible structures
+    if (Array.isArray(data)) {
+      // Case 1: Response is directly an array
+      subscriptionsArray = data;
+      foundIn = "root array";
+    } else if (Array.isArray(data.subscriptions)) {
+      // Case 2: data.subscriptions array
+      subscriptionsArray = data.subscriptions;
+      foundIn = "data.subscriptions";
+    } else if (Array.isArray(data.subscription)) {
+      // Case 3: data.subscription array
+      subscriptionsArray = data.subscription;
+      foundIn = "data.subscription";
+    } else if (Array.isArray(data.data?.subscriptions)) {
+      // Case 4: data.data.subscriptions array
+      subscriptionsArray = data.data.subscriptions;
+      foundIn = "data.data.subscriptions";
+    } else if (Array.isArray(data.data?.subscription)) {
+      // Case 5: data.data.subscription array
+      subscriptionsArray = data.data.subscription;
+      foundIn = "data.data.subscription";
+    } else if (data.subscriptions?.data && Array.isArray(data.subscriptions.data)) {
+      // Case 6: data.subscriptions.data array
+      subscriptionsArray = data.subscriptions.data;
+      foundIn = "data.subscriptions.data";
+    } else if (data.subscription?.data && Array.isArray(data.subscription.data)) {
+      // Case 7: data.subscription.data array
+      subscriptionsArray = data.subscription.data;
+      foundIn = "data.subscription.data";
+    } else if (Array.isArray(data.data)) {
+      // Case 8: data.data array
+      subscriptionsArray = data.data;
+      foundIn = "data.data";
+    } else if (data.subscriptions && typeof data.subscriptions === 'object') {
+      // Case 9: Single subscription object in data.subscriptions
+      subscriptionsArray = [data.subscriptions];
+      foundIn = "data.subscriptions (single object)";
+    } else if (data.subscription && typeof data.subscription === 'object') {
+      // Case 10: Single subscription object in data.subscription
+      subscriptionsArray = [data.subscription];
+      foundIn = "data.subscription (single object)";
+    } else if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+      // Case 11: Single subscription in data.data
+      subscriptionsArray = [data.data];
+      foundIn = "data.data (single object)";
+    }
+
+    console.log(`📍 Found subscriptions in: ${foundIn || 'NOT FOUND'}`);
+    console.log(`📦 Subscription count: ${subscriptionsArray.length}`);
+    
+    if (subscriptionsArray.length > 0) {
+      console.log("📋 First subscription sample:", JSON.stringify(subscriptionsArray[0], null, 2));
+    }
+
+    // 10. Validate subscription structure
+    const validSubscriptions = subscriptionsArray.filter(sub => {
+      const hasId = sub.id || sub.subscription_id;
+      if (!hasId) {
+        console.warn("⚠️ Invalid subscription item (no ID):", sub);
+      }
+      return hasId;
+    });
+
+    console.log(`✅ Valid subscriptions: ${validSubscriptions.length}/${subscriptionsArray.length}`);
+
+    // 11. Set state
+    if (validSubscriptions.length > 0) {
+      setSubscriptions(validSubscriptions);
+      setError(null);
+      console.log("🎉 Subscriptions loaded successfully");
+    } else {
+      console.log("ℹ️ No valid subscriptions found");
+      setSubscriptions([]);
+      // Only show error if we expected subscriptions but got none
+      if (subscriptionsArray.length === 0 && foundIn) {
+        setError("No active subscriptions found");
+      }
+    }
+
+  } catch (err) {
+    console.error("💥 FETCH ERROR:", {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+    });
+
+    // User-friendly error messages
+    if (err.name === 'AbortError') {
+      setError("Request took too long. Please check your internet connection and try again.");
+    } else if (err.message.includes('Network request failed')) {
+      setError("Cannot connect to server. Please check your internet connection.");
+    } else if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+      setError("Session expired. Please login again.");
+    } else if (err.message.includes('JSON')) {
+      setError("Server returned invalid data. Please try again later.");
+    } else {
+      setError(err.message || "Failed to load subscriptions");
+    }
+
+  } finally {
+    console.log("🏁 === FETCH COMPLETE ===");
+    console.log("📊 Final state:", {
+      loading: false,
+      refreshing: false,
+      subscriptionCount: subscriptions.length,
+      error: error,
+    });
+    
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
+
+useEffect(() => {
+  console.log("👤 User state changed:", {
+    userExists: !!user,
+    userId: user?.id,
+    hasBranch: !!user?.branch,
+    hasSubdomain: !!user?.branch?.subdomain,
+    subdomain: user?.branch?.subdomain
+  });
+
+  // If user is null, we're still loading
+  if (user === null) {
+    console.log("⏳ User data is still loading...");
+    return;
+  }
+
+  // If user exists but no branch/subdomain
+  if (user && (!user.branch || !user.branch.subdomain)) {
+    console.error("⚠️ User exists but missing branch/subdomain");
+    console.log("📋 User object:", JSON.stringify(user, null, 2));
+    
+    if (!loading) {
+      setError("Your account is missing branch information. Please contact support.");
+    }
+    return;
+  }
+
+  // If we have all required data
+  if (user && user.branch && user.branch.subdomain) {
+    console.log("✅ All data available, fetching subscriptions...");
     fetchSubscriptionData();
-  }, [user]);
+  }
+
+  // If user is explicitly undefined (logged out)
+  if (user === undefined) {
+    console.log("👋 No user logged in");
+    setSubscriptions([]);
+    setLoading(false);
+  }
+}, [user]);
 
   // Handle auto-focus when coming from Home screen
   useEffect(() => {
     if (!focusSubscriptionId) return;
-    
+
     console.log("Focus subscription ID received:", focusSubscriptionId);
     setFocusedSubId(focusSubscriptionId);
-    
+
     // Reset auto-focus flag when subscription ID changes
     hasAutoFocused.current = false;
   }, [focusSubscriptionId]);
@@ -198,19 +430,27 @@ const MySubscriptionsScreen = () => {
   // Auto-scroll to focused subscription when subscriptions are loaded
   useFocusEffect(
     useCallback(() => {
-      if (!focusSubscriptionId || subscriptions.length === 0 || hasAutoFocused.current) {
+      if (
+        !focusSubscriptionId ||
+        subscriptions.length === 0 ||
+        hasAutoFocused.current
+      ) {
         return;
       }
 
-      console.log("Attempting to auto-focus on subscription:", focusSubscriptionId);
+      console.log(
+        "Attempting to auto-focus on subscription:",
+        focusSubscriptionId,
+      );
       console.log("Total subscriptions:", subscriptions.length);
-      
+
       // Find the subscription
       const subscription = subscriptions.find(
-        sub => sub.subscription_id === focusSubscriptionId || 
-               sub.id === focusSubscriptionId
+        (sub) =>
+          sub.subscription_id === focusSubscriptionId ||
+          sub.id === focusSubscriptionId,
       );
-      
+
       if (!subscription) {
         console.log("Subscription not found with ID:", focusSubscriptionId);
         return;
@@ -220,18 +460,18 @@ const MySubscriptionsScreen = () => {
       const scrollTimer = setTimeout(() => {
         const y = subscriptionPositions.current[focusSubscriptionId];
         console.log("Subscription position Y:", y);
-        
+
         if (y !== undefined && scrollViewRef.current) {
           hasAutoFocused.current = true;
-          
+
           // Scroll to position with some padding
-          scrollViewRef.current.scrollTo({ 
-            y: Math.max(0, y - 150), 
-            animated: true 
+          scrollViewRef.current.scrollTo({
+            y: Math.max(0, y - 150),
+            animated: true,
           });
-          
+
           console.log("Scrolled to position:", y - 150);
-          
+
           // Add highlight animation
           Animated.sequence([
             Animated.timing(glowAnim, {
@@ -254,9 +494,9 @@ const MySubscriptionsScreen = () => {
               const y2 = subscriptionPositions.current[focusSubscriptionId];
               if (y2 !== undefined && scrollViewRef.current) {
                 hasAutoFocused.current = true;
-                scrollViewRef.current.scrollTo({ 
-                  y: Math.max(0, y2 - 150), 
-                  animated: true 
+                scrollViewRef.current.scrollTo({
+                  y: Math.max(0, y2 - 150),
+                  animated: true,
                 });
               }
             }, 500);
@@ -265,7 +505,7 @@ const MySubscriptionsScreen = () => {
       }, 300);
 
       return () => clearTimeout(scrollTimer);
-    }, [focusSubscriptionId, subscriptions])
+    }, [focusSubscriptionId, subscriptions]),
   );
 
   const onRefresh = React.useCallback(async () => {
@@ -543,22 +783,37 @@ const MySubscriptionsScreen = () => {
 
   const renderSubscriptionCard = (subscription) => {
     const billingHistory = getBillingHistory(subscription);
-    const currentBilling = billingHistory.find((b) => b.status === "unpaid") || billingHistory[0] || null;
+    const currentBilling =
+      billingHistory.find((b) => b.status === "unpaid") ||
+      billingHistory[0] ||
+      null;
 
     const isSubscriptionActive = subscription.status === "active";
-    const isSubscriptionEnded = subscription.status === "ended" || subscription.status === "cancelled" || subscription.status === "terminated";
-    const isCurrentBillUnpaid = currentBilling && currentBilling.status === "unpaid";
-    const shouldShowPaymentButtons = isSubscriptionActive && isCurrentBillUnpaid;
+    const isSubscriptionEnded =
+      subscription.status === "ended" ||
+      subscription.status === "cancelled" ||
+      subscription.status === "terminated";
+    const isCurrentBillUnpaid =
+      currentBilling && currentBilling.status === "unpaid";
+    const shouldShowPaymentButtons =
+      isSubscriptionActive && isCurrentBillUnpaid;
 
     // Check if this subscription should be focused
-    const isFocusedSub = focusSubscriptionId === subscription.subscription_id || focusSubscriptionId === subscription.id;
-    const isFocusedBilling = isFocusedSub && focusBillingId === currentBilling?.id;
+    const isFocusedSub =
+      focusSubscriptionId === subscription.subscription_id ||
+      focusSubscriptionId === subscription.id;
+    const isFocusedBilling =
+      isFocusedSub && focusBillingId === currentBilling?.id;
 
     // Check if this subscription is loading for View Details
-    const isViewDetailsLoading = loadingNavigation.viewDetails && loadingNavigation.subscriptionId === subscription.id;
+    const isViewDetailsLoading =
+      loadingNavigation.viewDetails &&
+      loadingNavigation.subscriptionId === subscription.id;
 
     // Check if this subscription is loading for Billing History
-    const isBillingHistoryLoading = loadingNavigation.billingHistory && loadingNavigation.subscriptionId === subscription.id;
+    const isBillingHistoryLoading =
+      loadingNavigation.billingHistory &&
+      loadingNavigation.subscriptionId === subscription.id;
 
     // Determine bill title based on subscription status
     const getBillTitle = () => {
@@ -602,28 +857,34 @@ const MySubscriptionsScreen = () => {
     const statusMessage = getStatusMessage();
 
     // Animated styles for focused subscription
-    const focusedCardStyle = isFocusedSub ? {
-      borderWidth: 2,
-      borderColor: colors.primary,
-      shadowColor: colors.primary,
-      shadowOpacity: glowAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0.3, 0.8],
-      }),
-      shadowRadius: 10,
-      elevation: 8,
-      transform: [{
-        scale: glowAnim.interpolate({
-          inputRange: [0, 1],
-          outputRange: [1, 1.01],
-        }),
-      }],
-    } : {};
+    const focusedCardStyle = isFocusedSub
+      ? {
+          borderWidth: 2,
+          borderColor: colors.primary,
+          shadowColor: colors.primary,
+          shadowOpacity: glowAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.3, 0.8],
+          }),
+          shadowRadius: 10,
+          elevation: 8,
+          transform: [
+            {
+              scale: glowAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 1.01],
+              }),
+            },
+          ],
+        }
+      : {};
 
-    const focusedBillingStyle = isFocusedBilling ? {
-      backgroundColor: colors.primary + "15",
-      borderColor: colors.primary + "40",
-    } : {};
+    const focusedBillingStyle = isFocusedBilling
+      ? {
+          backgroundColor: colors.primary + "15",
+          borderColor: colors.primary + "40",
+        }
+      : {};
 
     return (
       <Animated.View
@@ -857,10 +1118,12 @@ const MySubscriptionsScreen = () => {
                       style={{
                         borderRadius: 10,
                         shadowColor: colors.primary,
-                        shadowOpacity: isFocusedBilling ? glowAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.3, 0.8],
-                        }) : 0.2,
+                        shadowOpacity: isFocusedBilling
+                          ? glowAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.3, 0.8],
+                            })
+                          : 0.2,
                         shadowRadius: isFocusedBilling ? 12 : 8,
                         elevation: isFocusedBilling ? 10 : 3,
                       }}
@@ -1142,8 +1405,6 @@ const MySubscriptionsScreen = () => {
           {/* Optional dark overlay for better text readability */}
           <View style={styles.imageOverlay} />
         </ImageBackground>
-
-       
       </View>
 
       {/* Content */}
@@ -1166,7 +1427,7 @@ const MySubscriptionsScreen = () => {
           { useNativeDriver: false },
         )}
       >
-         {/* Summary Card positioned over the image */}
+        {/* Summary Card positioned over the image */}
         <View style={[styles.summaryCard]}>
           <View style={styles.summaryHeader}>
             <View style={styles.summaryContent}>
@@ -1296,7 +1557,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 4,
     left: 5,
-    top:15,
+    top: 15,
     marginBottom: 20,
   },
   summaryStats: {

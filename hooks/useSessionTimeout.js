@@ -1,49 +1,35 @@
-import { useEffect } from "react";
 import { AppState } from "react-native";
+import { useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const SESSION_TIMEOUT = 1 * 60 * 1000; // 1 minute 
+const TIMEOUT = 60 * 1000;
 
-export default function useSessionTimeout() {
+export default function useSessionTimeout({ enabled = true } = {}) {
+  const appState = useRef(AppState.currentState);
+  const [expired, setExpired] = useState(false);
+
   useEffect(() => {
-    let currentState = AppState.currentState;
+    if (!enabled) return; // 🔥 STOP on login page
 
-    const handleAppStateChange = async (nextState) => {
-      // App going to background → save time
-      if (currentState === "active" && nextState.match(/inactive|background/)) {
-        await AsyncStorage.setItem(
-          "last_active_time",
-          Date.now().toString()
-        );
+    const handleChange = async (nextState) => {
+      if (appState.current === "active" && nextState !== "active") {
+        await AsyncStorage.setItem("bgTime", Date.now().toString());
       }
 
-      // App coming back
-      if (currentState.match(/inactive|background/) && nextState === "active") {
-        const lastActive = await AsyncStorage.getItem("last_active_time");
-        const token = await AsyncStorage.getItem("token");
-
-        if (lastActive && token) {
-          const diff = Date.now() - parseInt(lastActive, 10);
-
-          if (diff > SESSION_TIMEOUT) {
-
-            // 🔥 mark session expired
-            await AsyncStorage.setItem("session_expired", "true");
-
-            // clear auth
-            await AsyncStorage.multiRemove([
-              "token",
-              "user",
-              "last_active_time",
-            ]);
-          }
+      if (appState.current !== "active" && nextState === "active") {
+        const last = await AsyncStorage.getItem("bgTime");
+        if (last && Date.now() - Number(last) >= TIMEOUT) {
+          await AsyncStorage.removeItem("token");
+          setExpired(true);
         }
       }
 
-      currentState = nextState;
+      appState.current = nextState;
     };
 
-    const sub = AppState.addEventListener("change", handleAppStateChange);
+    const sub = AppState.addEventListener("change", handleChange);
     return () => sub.remove();
-  }, []);
+  }, [enabled]); // 👈 important
+
+  return { expired, setExpired };
 }

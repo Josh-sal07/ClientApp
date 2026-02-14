@@ -158,7 +158,7 @@ export const useLoginLogic = () => {
         }
 
         const response = await fetch(
-          "https://staging.kazibufastnet.com/api/app/login",
+          "https://tub.kazibufastnet.com/api/app/login",
           {
             method: "POST",
             headers: {

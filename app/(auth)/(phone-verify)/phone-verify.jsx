@@ -1,3 +1,4 @@
+// phone-verify.js
 import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
@@ -32,8 +33,8 @@ export default function PhoneVerifyScreen() {
   useEffect(() => {
     const loadExistingPhone = async () => {
       try {
-        // Always check the consistent 'phone' key
-        const savedPhone = await AsyncStorage.getItem("phone");
+        // Check for user_phone (from RootLayout logic)
+        const savedPhone = await AsyncStorage.getItem("user_phone");
         if (savedPhone) {
           setPhone(savedPhone);
         }
@@ -41,6 +42,7 @@ export default function PhoneVerifyScreen() {
         // Also clear any temporary data
         await AsyncStorage.removeItem("temp_phone");
       } catch (error) {
+        console.error("Error loading phone:", error);
       }
     };
 

@@ -64,6 +64,7 @@ export default function ClientTabsLayout() {
       floatingButton: "#1fe1cbff",
       floatingButtonBorder: "#FFFFFF",
       loadingIndicator: "#1fe1cbff",
+      textLoading: '#1fe1cbff'
     },
     dark: {
       primary: "#1f6f68",
@@ -89,6 +90,7 @@ export default function ClientTabsLayout() {
       floatingButton: "#1f6f68",
       floatingButtonBorder: "#333333",
       loadingIndicator: "#1fe1cbff",
+      textLoading: '#1fe1cbff'
     },
   };
 
@@ -491,9 +493,9 @@ export default function ClientTabsLayout() {
       {/* Loading Indicator */}
       {isNavigating && (
         <View style={styles.loadingOverlay}>
-          <View style={styles.loadingContainer}>
+          <View style={[styles.loadingContainer, {backgroundColor:colors.background}]}>
             <ActivityIndicator size="large" color={colors.loadingIndicator} />
-            <Text style={[styles.loadingText, { color: colors.text }]}>
+            <Text style={[styles.loadingText, { color: colors.textLoading }]}>
               Loading...
             </Text>
           </View>

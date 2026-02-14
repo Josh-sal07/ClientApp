@@ -138,7 +138,7 @@ const AccountSettings = () => {
     setActiveHeaderTab(tabName);
   };
 
-  const handleSave = async () => {
+ const handleSave = async () => {
     // Validate required fields
     if (!form.name.trim()) {
       Alert.alert("Validation Error", "Name is required");
@@ -157,6 +157,15 @@ const AccountSettings = () => {
         return;
       }
 
+      // Check if user.branch exists
+      if (!user?.branch?.subdomain) {
+        Alert.alert("Error", "Subdomain not found");
+        console.log("Current user object:", user);
+        return;
+      }
+
+      const subdomain = user.branch.subdomain;
+      
       // Prepare data for backend
       const updateData = {
         name: form.name.trim(),
@@ -167,8 +176,14 @@ const AccountSettings = () => {
         mobile_number: form.mobile_number?.trim() || "",
       };
 
+      // Use the correct URL with subdomain
+      const API_URL = `https://${subdomain}.kazibufastnet.com/api/app/profile/update`;
+      
+      console.log("Update URL:", API_URL);
+      console.log("Update data:", updateData);
+
       // SEND TO BACKEND API
-      const response = await fetch(API_EDIT_PROFILE_URL, {
+      const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -179,11 +194,15 @@ const AccountSettings = () => {
       });
 
       const responseText = await response.text();
+      console.log("Response status:", response.status);
+      console.log("Response text:", responseText);
       
       let result;
       try {
         result = JSON.parse(responseText);
+        console.log("Parsed result:", result);
       } catch (parseError) {
+        console.log("Parse error:", parseError);
         throw new Error("Server returned invalid JSON response");
       }
 
@@ -231,6 +250,7 @@ const AccountSettings = () => {
       }
 
     } catch (error) {
+      console.log("Save error:", error);
       
       if (error.message === "Network request failed") {
         Alert.alert(

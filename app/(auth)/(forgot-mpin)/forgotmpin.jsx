@@ -18,14 +18,16 @@ import {
 import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../../theme/ThemeContext";
 import { useColorScheme } from "react-native";
+import { useUserStore } from "../../../store/user";
 
 const { width, height } = Dimensions.get("window");
 
 export default function ForgotMpinScreen() {
+  const user = useUserStore((state) => state.user);
   const router = useRouter();
   const { mode, theme } = useTheme();
   const systemColorScheme = useColorScheme();
@@ -104,6 +106,11 @@ export default function ForgotMpinScreen() {
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(20))[0];
 
+  const normalizePhone = (number) => {
+    const clean = number.replace(/\D/g, "");
+    return clean.slice(-10); // ensures EXACTLY 10 digits
+  };
+
   // Animate on step change
   useEffect(() => {
     Animated.parallel([
@@ -131,18 +138,20 @@ export default function ForgotMpinScreen() {
   // Masked display
   const maskPhone = (value) => {
     const clean = value.replace(/\D/g, "");
-    return clean.length === 10 ? `+63${clean[0]}******${clean.slice(-3)}` : "+63";
+    return clean.length === 10
+      ? `+63${clean[0]}******${clean.slice(-3)}`
+      : "+63";
   };
 
   // Handle OTP input
   const handleOtpChange = (index, value) => {
     const numeric = value.replace(/\D/g, "");
     if (numeric.length > 1) return;
-    
+
     const newOtp = [...otp];
     newOtp[index] = numeric;
     setOtp(newOtp);
-    
+
     // Auto-focus next input
     if (numeric && index < 5) {
       setTimeout(() => otpRefs.current[index + 1]?.focus(), 10);
@@ -153,11 +162,11 @@ export default function ForgotMpinScreen() {
   const handlePinChange = (pinArray, setPinArray, index, value) => {
     const numeric = value.replace(/\D/g, "");
     if (numeric.length > 1) return;
-    
+
     const newPinArray = [...pinArray];
     newPinArray[index] = numeric;
     setPinArray(newPinArray);
-    
+
     // Auto-focus next input
     if (numeric && index < 5) {
       if (setPinArray === setNewPin) {
@@ -169,122 +178,142 @@ export default function ForgotMpinScreen() {
   };
 
   // Step 1: Send OTP to verify phone
-  const handleSendOtp = async () => {
-    const clean = phone.replace(/\D/g, "");
+const handleSendOtp = async () => {
+  try {
+    const phoneNormalized = normalizePhone(phone);
 
-    if (!clean) {
-      Alert.alert("Error", "Please enter your phone number");
-      return;
-    }
-    
-    if (clean.length !== 10) {
-      Alert.alert("Error", "Phone number must be 10 digits");
-      return;
-    }
-    
-    if (!clean.startsWith("9")) {
-      Alert.alert("Error", "Phone number must start with 9");
+    if (phoneNormalized.length !== 10 || !phoneNormalized.startsWith("9")) {
+      Alert.alert("Error", "Invalid phone number");
       return;
     }
 
-    try {
-      setLoading(true);
-
-      const response = await fetch(
-        "https://staging.kazibufastnet.com/api/app/verify_number",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mobile_number: clean }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok || data.status !== "success") {
-        throw new Error(data.message || "Phone number not found in our system");
-      }
-
-      await AsyncStorage.setItem("reset_phone", clean);
-      
-      Alert.alert(
-        "OTP Sent",
-        `Verification code sent to ${maskPhone(clean)}`,
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              setStep(2);
-              setResendTimer(30);
-              setCanResend(false);
-            }
-          }
-        ]
-      );
-
-    } catch (error) {
-      Alert.alert("Error", error.message || "Failed to send OTP");
-    } finally {
-      setLoading(false);
+    if (!user?.branch?.subdomain) {
+      Alert.alert("Error", "Service unavailable");
+      return;
     }
-  };
+
+    setLoading(true);
+
+    const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/verify_number`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        mobile_number: phoneNormalized,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.status !== "success") {
+      throw new Error(data.message || "Failed to send OTP");
+    }
+
+    await AsyncStorage.setItem("reset_phone", phoneNormalized);
+
+    Alert.alert("OTP Sent", "Please check your phone", [
+      { text: "OK", onPress: () => setStep(2) },
+    ]);
+  } catch (error) {
+    Alert.alert("Error", error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Step 2: Verify OTP
-  const handleVerifyOtp = async () => {
+const handleVerifyOtp = async () => {
+  try {
     const otpCode = otp.join("");
-    
+
     if (otpCode.length !== 6) {
-      Alert.alert("Error", "Please enter the 6-digit OTP");
+      Alert.alert("Error", "Enter the 6-digit OTP");
       return;
     }
 
     const storedPhone = await AsyncStorage.getItem("reset_phone");
     if (!storedPhone) {
-      Alert.alert("Error", "Session expired. Please start again.");
+      Alert.alert("Error", "Session expired");
       return;
     }
 
-    try {
-      setLoading(true);
-
-      const response = await fetch(
-        "https://staging.kazibufastnet.com/api/app/otp",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mobile_number: storedPhone,
-            otp: otpCode,
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok || !data.status === "success") {
-        throw new Error(data.message || "Invalid OTP");
-      }
-
-      Alert.alert(
-        "OTP Verified",
-        "Please create your new MPIN",
-        [
-          {
-            text: "Continue",
-            onPress: () => {
-              setStep(3);
-              setOtp(["", "", "", "", "", ""]);
-            }
-          }
-        ]
-      );
-
-    } catch (error) {
-      Alert.alert("Error", error.message || "OTP verification failed");
-    } finally {
-      setLoading(false);
+    if (!user?.branch?.subdomain) {
+      Alert.alert("Error", "Service unavailable");
+      return;
     }
-  };
+
+    setLoading(true);
+
+    const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/otp`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        mobile_number: storedPhone,
+        otp: otpCode,
+      }),
+    });
+
+    const data = await response.json();
+
+    // ✅ THIS IS THE ONLY VALID SUCCESS CONDITION
+    if (!response.ok || data.status !== "verified") {
+      throw new Error("Invalid OTP");
+    }
+
+    // ✅ OTP VERIFIED
+    setOtp(["", "", "", "", "", ""]);
+    setStep(3);
+  } catch (error) {
+    Alert.alert("Error", error.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  // Resend OTP
+const handleResendOtp = async () => {
+  try {
+    const storedPhone = await AsyncStorage.getItem("reset_phone");
+    if (!storedPhone) return;
+
+    if (!user?.branch?.subdomain) return;
+
+    setCanResend(false);
+    setResendTimer(30);
+
+    const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/verify_number`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mobile_number: storedPhone,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.status !== "success") {
+      throw new Error("Failed to resend OTP");
+    }
+
+    Alert.alert("OTP Resent", "Check your phone");
+  } catch (error) {
+    Alert.alert("Error", error.message);
+    setCanResend(true);
+  }
+};
+
 
   // Step 3: Reset MPIN
   const handleResetMpin = async () => {
@@ -313,11 +342,29 @@ export default function ForgotMpinScreen() {
       return;
     }
 
+    // Check if user exists
+    if (!user) {
+      Alert.alert(
+        "Error",
+        "User information not available. Please log in again.",
+      );
+      return;
+    }
+
+    // Check if branch and subdomain exist
+    if (!user.branch || !user.branch.subdomain) {
+      Alert.alert(
+        "Error",
+        "Unable to determine your service domain. Please contact support.",
+      );
+      return;
+    }
+
     try {
       setLoading(true);
-
+      const subdomain = user.branch.subdomain;
       const response = await fetch(
-        "https://staging.kazibufastnet.com/api/app/setup_pin",
+        `https://${subdomain}.kazibufastnet.com/api/app/setup_pin`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -325,7 +372,7 @@ export default function ForgotMpinScreen() {
             mobile_number: storedPhone,
             pin: pinString,
           }),
-        }
+        },
       );
 
       const data = await response.json();
@@ -338,62 +385,18 @@ export default function ForgotMpinScreen() {
       await AsyncStorage.setItem("pin_set", "true");
       await AsyncStorage.setItem("temp_phone", storedPhone);
 
-      Alert.alert(
-        "Success",
-        "MPIN reset successfully!",
-        [
-          {
-            text: "Login Now",
-            onPress: () => {
-              router.replace("/(auth)/(login)/login");
-            }
-          }
-        ]
-      );
-
+      Alert.alert("Success", "MPIN reset successfully!", [
+        {
+          text: "Login Now",
+          onPress: () => {
+            router.replace("/(auth)/(login)/login");
+          },
+        },
+      ]);
     } catch (error) {
       Alert.alert("Error", error.message || "Failed to reset MPIN");
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Resend OTP
-  const handleResendOtp = async () => {
-    if (!canResend) return;
-
-    const storedPhone = await AsyncStorage.getItem("reset_phone");
-    if (!storedPhone) {
-      Alert.alert("Error", "Phone number not found");
-      return;
-    }
-
-    try {
-      setResendTimer(30);
-      setCanResend(false);
-
-      const response = await fetch(
-        "https://staging.kazibufastnet.com/api/app/verify_number",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mobile_number: storedPhone }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok || data.status !== "success") {
-        throw new Error(data.message || "Failed to resend OTP");
-      }
-
-      Alert.alert("OTP Resent", "A new OTP has been sent to your phone.");
-      setOtp(["", "", "", "", "", ""]);
-      otpRefs.current[0]?.focus();
-
-    } catch (error) {
-      Alert.alert("Error", error.message || "Failed to resend OTP");
-      setCanResend(true);
     }
   };
 
@@ -425,8 +428,14 @@ export default function ForgotMpinScreen() {
                 style={[
                   styles.step,
                   { backgroundColor: colors.lightGray },
-                  step === stepNum && [styles.stepActive, { backgroundColor: colors.primary }],
-                  step > stepNum && [styles.stepCompleted, { backgroundColor: colors.success }],
+                  step === stepNum && [
+                    styles.stepActive,
+                    { backgroundColor: colors.primary },
+                  ],
+                  step > stepNum && [
+                    styles.stepCompleted,
+                    { backgroundColor: colors.success },
+                  ],
                 ]}
               >
                 <Text style={styles.stepText}>
@@ -438,22 +447,43 @@ export default function ForgotMpinScreen() {
                   style={[
                     styles.stepConnector,
                     { backgroundColor: colors.lightGray },
-                    step > stepNum && [styles.stepConnectorActive, { backgroundColor: colors.primary }],
+                    step > stepNum && [
+                      styles.stepConnectorActive,
+                      { backgroundColor: colors.primary },
+                    ],
                   ]}
                 />
               )}
             </React.Fragment>
           ))}
         </View>
-        
+
         <View style={styles.stepLabelContainer}>
-          <Text style={[styles.stepLabel, { color: colors.textLight }, step === 1 && [styles.stepLabelActive, { color: colors.primary }]]}>
+          <Text
+            style={[
+              styles.stepLabel,
+              { color: colors.textLight },
+              step === 1 && [styles.stepLabelActive, { color: colors.primary }],
+            ]}
+          >
             Verify Phone
           </Text>
-          <Text style={[styles.stepLabel, { color: colors.textLight }, step === 2 && [styles.stepLabelActive, { color: colors.primary }]]}>
+          <Text
+            style={[
+              styles.stepLabel,
+              { color: colors.textLight },
+              step === 2 && [styles.stepLabelActive, { color: colors.primary }],
+            ]}
+          >
             Enter OTP
           </Text>
-          <Text style={[styles.stepLabel, { color: colors.textLight }, step === 3 && [styles.stepLabelActive, { color: colors.primary }]]}>
+          <Text
+            style={[
+              styles.stepLabel,
+              { color: colors.textLight },
+              step === 3 && [styles.stepLabelActive, { color: colors.primary }],
+            ]}
+          >
             New MPIN
           </Text>
         </View>
@@ -476,16 +506,30 @@ export default function ForgotMpinScreen() {
         ]}
       >
         <View style={styles.inputContainer}>
-          <Text style={[styles.inputLabel, { color: colors.text }]}>Phone Number</Text>
-          <View style={[styles.phoneInputWrapper, { 
-            backgroundColor: colors.white, 
-            borderColor: colors.border 
-          }]}>
-            <View style={[styles.countryCodeBox, { 
-              backgroundColor: colors.primary + '10', 
-              borderRightColor: colors.border 
-            }]}>
-              <Text style={[styles.countryCodeText, { color: colors.dark }]}>+63</Text>
+          <Text style={[styles.inputLabel, { color: colors.text }]}>
+            Phone Number
+          </Text>
+          <View
+            style={[
+              styles.phoneInputWrapper,
+              {
+                backgroundColor: colors.white,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.countryCodeBox,
+                {
+                  backgroundColor: colors.primary + "10",
+                  borderRightColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.countryCodeText, { color: colors.dark }]}>
+                +63
+              </Text>
             </View>
             <TextInput
               style={[styles.phoneInput, { color: colors.dark }]}
@@ -541,34 +585,41 @@ export default function ForgotMpinScreen() {
           },
         ]}
       >
-        <Text style={[styles.subtitle, { marginBottom: 24, color: colors.textLight }]}>
+        <Text
+          style={[
+            styles.subtitle,
+            { marginBottom: 24, color: colors.textLight },
+          ]}
+        >
           Enter the 6-digit OTP sent to{"\n"}
-          <Text style={{ fontWeight: '700', color: colors.primary }}>
+          <Text style={{ fontWeight: "700", color: colors.primary }}>
             {maskPhone(phone)}
           </Text>
         </Text>
-        
+
         <View style={styles.inputContainer}>
-          <Text style={[styles.inputLabel, { color: colors.text }]}>Verification Code</Text>
+          <Text style={[styles.inputLabel, { color: colors.text }]}>
+            Verification Code
+          </Text>
           <View style={styles.otpContainer}>
             {otp.map((digit, index) => (
               <TextInput
                 key={index}
                 ref={(ref) => (otpRefs.current[index] = ref)}
                 style={[
-                  styles.otpInput, 
-                  { 
+                  styles.otpInput,
+                  {
                     backgroundColor: colors.white,
                     borderColor: colors.border,
-                    color: colors.text 
+                    color: colors.text,
                   },
                   digit && [
-                    styles.otpInputFilled, 
-                    { 
+                    styles.otpInputFilled,
+                    {
                       borderColor: colors.primary,
-                      backgroundColor: colors.primary + '05'
-                    }
-                  ]
+                      backgroundColor: colors.primary + "05",
+                    },
+                  ],
                 ]}
                 value={digit}
                 onChangeText={(val) => handleOtpChange(index, val)}
@@ -583,7 +634,9 @@ export default function ForgotMpinScreen() {
         </View>
 
         <View style={styles.resendContainer}>
-          <Text style={[styles.resendText, { color: colors.textLight }]}>Didn't receive the code?</Text>
+          <Text style={[styles.resendText, { color: colors.textLight }]}>
+            Didn't receive the code?
+          </Text>
           <TouchableOpacity
             style={styles.resendButton}
             onPress={handleResendOtp}
@@ -594,7 +647,10 @@ export default function ForgotMpinScreen() {
               style={[
                 styles.resendButtonText,
                 { color: colors.primary },
-                !canResend && [styles.resendButtonTextDisabled, { color: colors.textLight }],
+                !canResend && [
+                  styles.resendButtonTextDisabled,
+                  { color: colors.textLight },
+                ],
               ]}
             >
               {canResend ? "Resend OTP" : `Resend in ${resendTimer}s`}
@@ -640,34 +696,43 @@ export default function ForgotMpinScreen() {
           },
         ]}
       >
-        <Text style={[styles.subtitle, { marginBottom: 24, color: colors.textLight }]}>
+        <Text
+          style={[
+            styles.subtitle,
+            { marginBottom: 24, color: colors.textLight },
+          ]}
+        >
           Create a new 6-digit MPIN for your account
         </Text>
-        
+
         <View style={styles.pinSection}>
-          <Text style={[styles.inputLabel, { color: colors.text }]}>New MPIN</Text>
+          <Text style={[styles.inputLabel, { color: colors.text }]}>
+            New MPIN
+          </Text>
           <View style={styles.pinInputsContainer}>
             {[0, 1, 2, 3, 4, 5].map((index) => (
               <TextInput
                 key={`new-${index}`}
                 ref={(ref) => (newPinRefs.current[index] = ref)}
                 style={[
-                  styles.pinInput, 
-                  { 
+                  styles.pinInput,
+                  {
                     backgroundColor: colors.white,
                     borderColor: colors.border,
-                    color: colors.text 
+                    color: colors.text,
                   },
                   newPin[index] && [
-                    styles.pinInputFilled, 
-                    { 
+                    styles.pinInputFilled,
+                    {
                       borderColor: colors.primary,
-                      backgroundColor: colors.primary + '05'
-                    }
-                  ]
+                      backgroundColor: colors.primary + "05",
+                    },
+                  ],
                 ]}
                 value={newPin[index] ? "•" : ""}
-                onChangeText={(value) => handlePinChange(newPin, setNewPin, index, value)}
+                onChangeText={(value) =>
+                  handlePinChange(newPin, setNewPin, index, value)
+                }
                 keyboardType="number-pad"
                 maxLength={1}
                 editable={!loading}
@@ -680,7 +745,9 @@ export default function ForgotMpinScreen() {
         </View>
 
         <View style={styles.pinSection}>
-          <Text style={[styles.inputLabel, { color: colors.text }]}>Confirm MPIN</Text>
+          <Text style={[styles.inputLabel, { color: colors.text }]}>
+            Confirm MPIN
+          </Text>
           <View style={styles.pinInputsContainer}>
             {[0, 1, 2, 3, 4, 5].map((index) => (
               <TextInput
@@ -688,28 +755,31 @@ export default function ForgotMpinScreen() {
                 ref={(ref) => (confirmPinRefs.current[index] = ref)}
                 style={[
                   styles.pinInput,
-                  { 
+                  {
                     backgroundColor: colors.white,
                     borderColor: colors.border,
-                    color: colors.text 
+                    color: colors.text,
                   },
                   confirmPin[index] && [
-                    styles.pinInputFilled, 
-                    { 
+                    styles.pinInputFilled,
+                    {
                       borderColor: colors.primary,
-                      backgroundColor: colors.primary + '05'
-                    }
+                      backgroundColor: colors.primary + "05",
+                    },
                   ],
-                  isConfirmPinComplete && doPinsMatch && [
-                    styles.pinInputMatched,
-                    { 
-                      borderColor: colors.success,
-                      backgroundColor: colors.success + '10'
-                    }
-                  ],
+                  isConfirmPinComplete &&
+                    doPinsMatch && [
+                      styles.pinInputMatched,
+                      {
+                        borderColor: colors.success,
+                        backgroundColor: colors.success + "10",
+                      },
+                    ],
                 ]}
                 value={confirmPin[index] ? "•" : ""}
-                onChangeText={(value) => handlePinChange(confirmPin, setConfirmPin, index, value)}
+                onChangeText={(value) =>
+                  handlePinChange(confirmPin, setConfirmPin, index, value)
+                }
                 keyboardType="number-pad"
                 maxLength={1}
                 editable={!loading}
@@ -720,16 +790,20 @@ export default function ForgotMpinScreen() {
           </View>
         </View>
 
-        <View style={[
-          styles.statusContainer, 
-          { 
-            backgroundColor: colors.lightGray,
-            borderColor: colors.border 
-          }
-        ]}>
+        <View
+          style={[
+            styles.statusContainer,
+            {
+              backgroundColor: colors.lightGray,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           {isPinComplete && isConfirmPinComplete ? (
             doPinsMatch ? (
-              <Text style={[styles.statusTextSuccess, { color: colors.success }]}>
+              <Text
+                style={[styles.statusTextSuccess, { color: colors.success }]}
+              >
                 ✓ PINs match. You're good to go!
               </Text>
             ) : (
@@ -748,11 +822,16 @@ export default function ForgotMpinScreen() {
           style={[
             styles.button,
             { backgroundColor: colors.primary },
-            (loading || !isPinComplete || !isConfirmPinComplete || !doPinsMatch) &&
+            (loading ||
+              !isPinComplete ||
+              !isConfirmPinComplete ||
+              !doPinsMatch) &&
               styles.buttonDisabled,
           ]}
           onPress={handleResetMpin}
-          disabled={loading || !isPinComplete || !isConfirmPinComplete || !doPinsMatch}
+          disabled={
+            loading || !isPinComplete || !isConfirmPinComplete || !doPinsMatch
+          }
           activeOpacity={0.8}
         >
           {loading ? (
@@ -767,25 +846,26 @@ export default function ForgotMpinScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar 
+      <StatusBar
         barStyle="light-content"
         backgroundColor="transparent"
         translucent={true}
       />
-      
+
       {/* Gradient Header - Different gradients for light/dark mode */}
       <LinearGradient
-        colors={effectiveMode === "dark" 
-          ? [colors.gradientEnd, colors.gradientEnd]
-          : [colors.gradientEnd, colors.gradientEnd]
+        colors={
+          effectiveMode === "dark"
+            ? [colors.gradientEnd, colors.gradientEnd]
+            : [colors.gradientEnd, colors.gradientEnd]
         }
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.gradientHeader}
       >
-        <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+        <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
           <View style={styles.headerTop}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => router.back()}
             >
@@ -809,22 +889,31 @@ export default function ForgotMpinScreen() {
         >
           {/* Logo */}
           <View style={styles.logoContainer}>
-            <View style={[styles.logoWrapper, { 
-              backgroundColor: colors.primary + '10',
-              borderColor: colors.primary + '20'
-            }]}>
+            <View
+              style={[
+                styles.logoWrapper,
+                {
+                  backgroundColor: colors.primary + "10",
+                  borderColor: colors.primary + "20",
+                },
+              ]}
+            >
               <Image
                 source={require("../../../assets/images/kazi.png")}
                 style={styles.logo}
                 resizeMode="contain"
               />
             </View>
-            <Text style={[styles.appName, { color: colors.text }]}>KAZIBUFAST</Text>
+            <Text style={[styles.appName, { color: colors.text }]}>
+              KAZIBUFAST
+            </Text>
           </View>
 
           {/* Title */}
           <View style={styles.titleContainer}>
-            <Text style={[styles.title, { color: colors.text }]}>Reset Your MPIN</Text>
+            <Text style={[styles.title, { color: colors.text }]}>
+              Reset Your MPIN
+            </Text>
             <Text style={[styles.subtitle, { color: colors.textLight }]}>
               Follow these simple steps to reset your MPIN
             </Text>
@@ -837,7 +926,7 @@ export default function ForgotMpinScreen() {
           {step === 1 && renderPhoneStep()}
           {step === 2 && renderOtpStep()}
           {step === 3 && renderNewPinStep()}
-          
+
           <View style={styles.bottomSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -851,38 +940,38 @@ const styles = StyleSheet.create({
   },
   // Gradient Header Styles
   gradientHeader: {
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 10,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   headerSafeArea: {
-    paddingTop: Platform.OS === 'ios' ? 50 : 0,
+    paddingTop: Platform.OS === "ios" ? 50 : 0,
 
     paddingHorizontal: 20,
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 30,
   },
   backButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontWeight: "600",
+    color: "#FFFFFF",
     flex: 1,
-    textAlign: 'center',
+    textAlign: "center",
   },
   headerRightPlaceholder: {
     width: 44,
@@ -895,15 +984,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   logoContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 30,
   },
   logoWrapper: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 15,
     borderWidth: 2,
   },
@@ -913,54 +1002,54 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: "700",
     letterSpacing: 1,
   },
   titleContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 30,
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 10,
-    textAlign: 'center',
+    textAlign: "center",
   },
   subtitle: {
     fontSize: 15,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 22,
-    maxWidth: '90%',
+    maxWidth: "90%",
   },
   stepIndicatorContainer: {
     marginBottom: 30,
   },
   stepIndicator: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 15,
   },
   step: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginHorizontal: 8,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: "transparent",
   },
   stepActive: {
-    borderColor: '#FFFFFF',
+    borderColor: "#FFFFFF",
   },
   stepCompleted: {
     // Empty, color is set inline
   },
   stepText: {
-    fontWeight: '700',
+    fontWeight: "700",
     fontSize: 14,
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
   stepConnector: {
     width: 40,
@@ -971,25 +1060,25 @@ const styles = StyleSheet.create({
     // Empty, color is set inline
   },
   stepLabelContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingHorizontal: 10,
     marginTop: 10,
   },
   stepLabel: {
     fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
+    fontWeight: "500",
+    textAlign: "center",
     flex: 1,
   },
   stepLabelActive: {
-    fontWeight: '700',
+    fontWeight: "700",
   },
   formContainer: {
     borderRadius: 20,
     padding: 24,
     borderWidth: 1,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
@@ -1001,17 +1090,17 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 10,
     paddingLeft: 4,
-    textAlign: 'center',
+    textAlign: "center",
   },
   phoneInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderRadius: 12,
     borderWidth: 1,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   countryCodeBox: {
     paddingHorizontal: 16,
@@ -1020,18 +1109,18 @@ const styles = StyleSheet.create({
   },
   countryCodeText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   phoneInput: {
     flex: 1,
     height: 56,
     paddingHorizontal: 16,
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 16,
   },
   otpInput: {
@@ -1040,8 +1129,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderRadius: 12,
     fontSize: 20,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
   },
   otpInputFilled: {
     // Styles applied inline
@@ -1050,8 +1139,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   pinInputsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   pinInput: {
     width: 46,
@@ -1059,8 +1148,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderRadius: 12,
     fontSize: 20,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
   },
   pinInputFilled: {
     // Styles applied inline
@@ -1076,18 +1165,18 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
   },
   statusTextSuccess: {
-    fontWeight: '600',
+    fontWeight: "600",
   },
   statusTextError: {
-    fontWeight: '600',
+    fontWeight: "600",
   },
   resendContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 24,
   },
   resendText: {
@@ -1099,18 +1188,18 @@ const styles = StyleSheet.create({
   },
   resendButtonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   resendButtonTextDisabled: {
     opacity: 0.5,
   },
   button: {
-    width: '100%',
+    width: "100%",
     height: 56,
     borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#21C7B9',
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#21C7B9",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -1122,12 +1211,12 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   helperText: {
     fontSize: 12,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 12,
     paddingHorizontal: 20,
   },

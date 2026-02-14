@@ -129,22 +129,70 @@ const Ticket = () => {
   });
 
   const normalizeStatusForUser = (status) => {
-    switch ((status || "").toLowerCase()) {
-      case "for-approval":
-      case "submitted":
-        return "submitted";
+    if (!status) return "submitted";
 
-      case "in progress":
-      case "in_progress":
-        return "in_progress";
+    const s = status.toString().toLowerCase().trim();
 
-      case "close":
-      case "resolved":
-        return "resolved";
-
-      default:
-        return "submitted";
+    // SUBMITTED GROUP
+    if (s === "submitted" || s === "for-approval" || s === "for approval") {
+      return "submitted";
     }
+
+    // IN PROGRESS GROUP
+    if (s === "in progress" || s === "in_progress" || s === "processing") {
+      return "in_progress";
+    }
+
+    // RESOLVED GROUP
+    if (s === "resolved" || s === "close" || s === "closed" || s === "done") {
+      return "resolved";
+    }
+
+    // FALLBACK
+    return "submitted";
+  };
+
+  const normalizeImageUrl = (uri) => {
+    if (!uri) return null;
+
+    // Remove quotes if present
+    uri = uri.toString().replace(/['"]/g, "");
+
+    // Already absolute URL
+    if (uri.startsWith("http://") || uri.startsWith("https://")) {
+      return uri;
+    }
+
+    // Try different base paths
+    const basePaths = [
+      "uploads/",
+      "storage/",
+      "public/",
+      "images/",
+      "causes/",
+      "",
+    ];
+
+    const cleanUri = uri.startsWith("/") ? uri.slice(1) : uri;
+
+    if (user?.branch?.subdomain) {
+      // Try multiple URL patterns
+      const possibleUrls = [
+        `https://${user.branch.subdomain}.kazibufastnet.com/storage/${cleanUri}`,
+        `https://${user.branch.subdomain}.kazibufastnet.com/uploads/${cleanUri}`,
+        `https://${user.branch.subdomain}.kazibufastnet.com/public/${cleanUri}`,
+        `https://${user.branch.subdomain}.kazibufastnet.com/${cleanUri}`,
+        // Try without the "causes/" prefix if already in URI
+        cleanUri.startsWith("causes/")
+          ? `https://${user.branch.subdomain}.kazibufastnet.com/${cleanUri.replace("causes/", "")}`
+          : null,
+      ].filter(Boolean);
+
+      // Return the first one (we'll handle testing in the component)
+      return possibleUrls[0];
+    }
+
+    return `https://staging.kazibufastnet.com/${cleanUri}`;
   };
 
   // ==================== GET AUTH TOKEN ====================
@@ -160,7 +208,6 @@ const Ticket = () => {
   // ==================== FIXED: VIEW SINGLE TICKET DETAILS ====================
   const viewTicket = async (ticketId) => {
     try {
-
       if (!ticketId) {
         Alert.alert("Error", "Ticket ID is required");
         return null;
@@ -171,6 +218,15 @@ const Ticket = () => {
         Alert.alert("Error", "Authentication required");
         return null;
       }
+
+      // Check if user has subdomain
+      if (!user?.branch?.subdomain) {
+        Alert.alert("Error", "Subdomain not found");
+        console.log("User object:", user);
+        return null;
+      }
+
+      const subdomain = user.branch.subdomain;
 
       // FIRST: Try to get the ticket from our state to see what ID we have
       const localTicket = tickets.find(
@@ -199,66 +255,160 @@ const Ticket = () => {
       // Ensure it's a string (some backends prefer strings)
       idToSend = idToSend.toString();
 
-      // Now call the API with the CORRECT ID
-      const response = await axios.get(`${API_BASE_URL}/view/${idToSend}`, {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        timeout: 10000,
-      });
+      // ============ TRY DIFFERENT ENDPOINT PATTERNS ============
+      const possibleEndpoints = [
+        // App-specific endpoints (most likely)
+        `https://${subdomain}.kazibufastnet.com/api/app/tickets/${idToSend}`,
+        `https://${subdomain}.kazibufastnet.com/api/app/tickets/view/${idToSend}`,
+        `https://${subdomain}.kazibufastnet.com/api/app/tickets/show/${idToSend}`,
+
+        // Generic endpoints
+        `https://${subdomain}.kazibufastnet.com/api/tickets/${idToSend}`,
+        `https://${subdomain}.kazibufastnet.com/api/tickets/view/${idToSend}`,
+        `https://${subdomain}.kazibufastnet.com/api/tickets/show/${idToSend}`,
+
+        // User-specific endpoints
+        `https://${subdomain}.kazibufastnet.com/api/user/tickets/${idToSend}`,
+      ];
+
+      console.log("🔍 Trying to view ticket with ID:", idToSend);
+      console.log("Available endpoints to try:", possibleEndpoints);
 
       let ticketData = null;
+      let successfulEndpoint = "";
+      let lastError = null;
 
-      // Check different response structures
-      if (response.data) {
-        // Structure 1: response.data.ticket (what your API returns)
-        if (response.data.ticket) {
-          ticketData = response.data.ticket;
-        }
-        // Structure 2: response.data.data (common API pattern)
-        else if (response.data.data) {
-          ticketData = response.data.data;
-        }
-        // Structure 3: response.data itself is the ticket
-        else if (response.data.id || response.data.ticket_number) {
-          ticketData = response.data;
+      // Try each endpoint until one works
+      for (const endpoint of possibleEndpoints) {
+        try {
+          console.log(`🔍 Trying endpoint: ${endpoint}`);
+
+          const response = await axios.get(endpoint, {
+            headers: {
+              Accept: "application/json",
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 10000,
+          });
+
+          console.log(`✅ ${endpoint} - Status:`, response.status);
+          console.log("Response data:", response.data);
+
+          if (response.data) {
+            // Check different response structures
+            if (response.data.ticket) {
+              ticketData = response.data.ticket;
+              successfulEndpoint = endpoint;
+              break;
+            } else if (response.data.data) {
+              ticketData = response.data.data;
+              successfulEndpoint = endpoint;
+              break;
+            } else if (response.data.id || response.data.ticket_number) {
+              ticketData = response.data;
+              successfulEndpoint = endpoint;
+              break;
+            } else if (response.data.success && response.data.ticket) {
+              ticketData = response.data.ticket;
+              successfulEndpoint = endpoint;
+              break;
+            } else if (response.data.success && response.data.data) {
+              ticketData = response.data.data;
+              successfulEndpoint = endpoint;
+              break;
+            }
+          }
+        } catch (endpointError) {
+          lastError = endpointError;
+          console.log(`❌ ${endpoint} failed:`, endpointError.message);
+          if (endpointError.response) {
+            console.log("Response status:", endpointError.response.status);
+            console.log("Response data:", endpointError.response.data);
+          }
+          continue; // Try next endpoint
         }
       }
 
       if (!ticketData) {
-        throw new Error("No ticket data in response");
+        console.log("❌ All endpoints failed. Last error:", lastError?.message);
+        throw new Error(
+          `Ticket not found. Please check the ticket ID: ${idToSend}`,
+        );
       }
+
+      console.log(`✅ Using endpoint: ${successfulEndpoint}`);
+      console.log("Ticket data found:", ticketData);
 
       // Format the ticket data
       const createdAt = ticketData.created_at
         ? new Date(ticketData.created_at)
         : ticketData.createdAt
           ? new Date(ticketData.createdAt)
-          : new Date();
+          : ticketData.created_date
+            ? new Date(ticketData.created_date)
+            : new Date();
 
       const updatedAt = ticketData.updated_at
         ? new Date(ticketData.updated_at)
         : ticketData.updatedAt
           ? new Date(ticketData.updatedAt)
-          : createdAt;
+          : ticketData.updated_date
+            ? new Date(ticketData.updated_date)
+            : createdAt;
 
       // Extract subscription data
       let subscriptionData = null;
+      let subscriptionId = null;
+      let subscriptionName = "Unknown";
+
       if (ticketData.subscription) {
         subscriptionData = ticketData.subscription;
-      } else if (
-        ticketData.subscription_id &&
-        typeof ticketData.subscription_id === "object"
-      ) {
-        subscriptionData = ticketData.subscription?.subscription_id;
+        subscriptionId =
+          ticketData.subscription.subscription_id || ticketData.subscription.id;
+        subscriptionName =
+          ticketData.subscription.plan?.name ||
+          ticketData.subscription.name ||
+          "Unknown";
+      } else if (ticketData.subscription_id) {
+        if (typeof ticketData.subscription_id === "object") {
+          subscriptionData = ticketData.subscription_id;
+          subscriptionId =
+            ticketData.subscription_id.subscription_id ||
+            ticketData.subscription_id.id;
+          subscriptionName =
+            ticketData.subscription_id.plan?.name ||
+            ticketData.subscription_id.name ||
+            "Unknown";
+        } else {
+          subscriptionId = ticketData.subscription_id;
+        }
       }
+
+      // Format ticket number properly
+      const formattedTicketNumber = (ticketNumber, id) => {
+        if (ticketNumber) return ticketNumber;
+
+        if (id) {
+          return `TKT-${id.toString().padStart(6, "0")}`;
+        }
+
+        return "TKT-UNKNOWN";
+      };
 
       const formattedTicket = {
         id: ticketData.id, // This is the actual backend database ID
         backendId: ticketData.id, // Store it here too
-        ticketNumber: ticketData.ticket_number || ticketData.id,
+        ticketNumber: formattedTicketNumber(
+          ticketData.ticket_number,
+          ticketData.id,
+        ),
         subject: ticketData.subject || ticketData.title || "No Subject",
+        description:
+          ticketData.description ||
+          ticketData.message ||
+          ticketData.content ||
+          "",
         status: (ticketData.status || "submitted").toLowerCase().trim(),
         priority: (
           ticketData.priority_level ||
@@ -268,31 +418,65 @@ const Ticket = () => {
         category: ticketData.type || ticketData.category || "General",
         createdAt: createdAt,
         updatedAt: updatedAt,
-        attachments: ticketData.picture
-          ? [ticketData.picture]
-          : ticketData.attachments || ticketData.images || [],
+        attachments: [
+          ...(ticketData.picture
+            ? ticketData.picture
+                .toString()
+                .split(",")
+                .map((p) => p.trim())
+            : []),
+
+          ...(ticketData.picture_reading
+            ? ticketData.picture_reading
+                .toString()
+                .split(",")
+                .map((p) => p.trim())
+            : []),
+
+          ...(Array.isArray(ticketData.attachments)
+            ? ticketData.attachments
+            : []),
+
+          ...(Array.isArray(ticketData.images) ? ticketData.images : []),
+
+          ...(Array.isArray(ticketData.files) ? ticketData.files : []),
+        ],
+
         assignedTo:
           ticketData.team_id ||
           ticketData.assigned_to ||
           ticketData.assigned_agent ||
+          ticketData.assigned_to_id ||
           null,
-        lastResponse: null,
-        responseCount: 0,
+        lastResponse: ticketData.last_response || null,
+        responseCount: ticketData.response_count || ticketData.replies || 0,
         formattedDate: createdAt.toLocaleDateString(),
         formattedTime: createdAt.toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         }),
         source: "api",
-        subscription_id: ticketData.subscription?.subscription_id,
-        subscription_name:
-          subscriptionData?.plan?.[0]?.name ||
-          subscriptionData?.plan?.name ||
-          subscriptionData?.subscription?.subscription_id ||
-          "Unknown",
+        subscription_id: subscriptionId,
+        subscription_name: subscriptionName,
+        rawApiResponse: ticketData, // Store raw data for debugging
       };
+
+      console.log("✅ Formatted ticket:", formattedTicket);
       return formattedTicket;
     } catch (error) {
+      console.log("❌ View ticket error:", error.message);
+      console.log("Error details:", error);
+
+      if (error.response) {
+        console.log("Error status:", error.response.status);
+        console.log("Error data:", error.response.data);
+
+        if (error.response.status === 404) {
+          console.log(
+            "⚠️ Ticket not found in backend, trying local storage...",
+          );
+        }
+      }
 
       // Return the local ticket as fallback
       if (user && user.id) {
@@ -310,14 +494,19 @@ const Ticket = () => {
             );
 
             if (foundTicket) {
+              console.log("✅ Using fallback local ticket");
               return foundTicket;
             }
           }
         } catch (storageError) {
+          console.log("Storage error:", storageError);
         }
       }
 
-      Alert.alert("Error", `Failed to load ticket: ${error.message}`);
+      Alert.alert(
+        "Error",
+        `Failed to load ticket: ${error.message || "Unknown error"}`,
+      );
 
       return null;
     }
@@ -327,81 +516,170 @@ const Ticket = () => {
     try {
       const token = await getToken();
 
-      const response = await axios.get(API_BASE_URL, {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      if (!token) {
+        console.log("❌ No token found for API fetch");
+        return [];
+      }
 
-      if (response.data) {
-        let ticketsData = [];
+      // Check if user has subdomain
+      if (!user?.branch?.subdomain) {
+        console.log("❌ No subdomain found in user:", user);
+        return [];
+      }
 
-        // Handle different response structures
-        if (Array.isArray(response.data.data)) {
-          ticketsData = response.data.data;
-        } else if (
-          response.data.data &&
-          Array.isArray(response.data.data.tickets)
-        ) {
-          ticketsData = response.data.data.tickets;
-        } else if (
-          response.data.tickets &&
-          Array.isArray(response.data.tickets)
-        ) {
-          ticketsData = response.data.tickets;
+      const subdomain = user.branch.subdomain;
+
+      // TRY DIFFERENT ENDPOINTS
+      const possibleEndpoints = [
+        `https://${subdomain}.kazibufastnet.com/api/app/tickets`,
+      ];
+
+      console.log("🔍 Testing ticket API endpoints...");
+      console.log("User ID:", user?.id);
+      console.log("Subdomain:", subdomain);
+      console.log("Token exists:", !!token);
+      console.log("Token first 10 chars:", token.substring(0, 10) + "...");
+
+      let ticketsData = [];
+      let successfulEndpoint = "";
+
+      // Try each endpoint until one works
+      for (const endpoint of possibleEndpoints) {
+        try {
+          console.log(`🔍 Trying endpoint: ${endpoint}`);
+
+          const response = await axios.get(endpoint, {
+            headers: {
+              Accept: "application/json",
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 10000,
+            params: {
+              user_id: user?.id, // Some APIs need user_id parameter
+            },
+          });
+
+          console.log(`✅ ${endpoint} - Status:`, response.status);
+          console.log("Full response:", response.data);
+
+          if (response.data) {
+            // Handle different response structures
+            if (Array.isArray(response.data.data)) {
+              ticketsData = response.data.data;
+              successfulEndpoint = endpoint;
+              break;
+            } else if (
+              response.data.data &&
+              Array.isArray(response.data.data.tickets)
+            ) {
+              ticketsData = response.data.data.tickets;
+              successfulEndpoint = endpoint;
+              break;
+            } else if (
+              response.data.tickets &&
+              Array.isArray(response.data.tickets)
+            ) {
+              ticketsData = response.data.tickets;
+              successfulEndpoint = endpoint;
+              break;
+            } else if (Array.isArray(response.data)) {
+              ticketsData = response.data;
+              successfulEndpoint = endpoint;
+              break;
+            } else if (
+              response.data.success &&
+              Array.isArray(response.data.data)
+            ) {
+              ticketsData = response.data.data;
+              successfulEndpoint = endpoint;
+              break;
+            }
+          }
+        } catch (endpointError) {
+          console.log(`❌ ${endpoint} failed:`, endpointError.message);
+          if (endpointError.response) {
+            console.log("Response status:", endpointError.response.status);
+            console.log("Response data:", endpointError.response.data);
+          }
+          continue; // Try next endpoint
+        }
+      }
+
+      if (!successfulEndpoint) {
+        console.log("❌ All endpoints failed");
+        return [];
+      }
+
+      console.log(`✅ Using endpoint: ${successfulEndpoint}`);
+      console.log("Found tickets data:", ticketsData);
+      console.log("Number of tickets:", ticketsData.length);
+
+      // Process API tickets
+      const apiTickets = ticketsData.map((ticket, index) => {
+        // The actual database ID from backend
+        const backendId = ticket.id || ticket.ticket_id;
+
+        // Use the backendId as the primary ID
+        const ticketId = backendId || `API-${Date.now()}-${index}`;
+
+        const status = ticket.status
+          ? ticket.status.toLowerCase().trim()
+          : "unknown";
+
+        let createdAt = new Date();
+        if (ticket.created_at) {
+          createdAt = new Date(ticket.created_at);
+        } else if (ticket.createdAt) {
+          createdAt = new Date(ticket.createdAt);
+        } else if (ticket.created_date) {
+          createdAt = new Date(ticket.created_date);
         }
 
-        // Process API tickets - CRITICAL: Use actual database ID
-        const apiTickets = ticketsData.map((ticket) => {
-          // The actual database ID from backend
-          const backendId = ticket.id || ticket.ticket_id;
-
-          // Use the backendId as the primary ID
-          const ticketId = backendId || `API-${Date.now()}-${Math.random()}`;
-
-          const status = ticket.status
-            ? ticket.status.toLowerCase().trim()
-            : null;
-
-          let createdAt = new Date();
-          if (ticket.created_at) {
-            createdAt = new Date(ticket.created_at);
-          } else if (ticket.createdAt) {
-            createdAt = new Date(ticket.createdAt);
-          }
-
-          return {
-            id: ticketId, // Use backend database ID
-            backendId: backendId, // Store it separately
-            ticketNumber: ticket.ticket_number || ticketId,
-            subject: ticket.subject || ticket.title || "No Subject",
-            status: status,
-            priority: (ticket.priority || "medium").toLowerCase(),
-            category: ticket.category || ticket.type || "General",
-            createdAt: createdAt,
-            updatedAt: ticket.updated_at
-              ? new Date(ticket.updated_at)
+        return {
+          id: ticketId,
+          backendId: backendId,
+          ticketNumber: ticket.ticket_number || ticket.ticketNumber || ticketId,
+          subject: ticket.subject || ticket.title || "No Subject",
+          status: status,
+          priority: (ticket.priority || "medium").toLowerCase(),
+          category: ticket.category || ticket.type || "General",
+          createdAt: createdAt,
+          updatedAt: ticket.updated_at
+            ? new Date(ticket.updated_at)
+            : ticket.updatedAt
+              ? new Date(ticket.updatedAt)
               : createdAt,
-            attachments: ticket.attachments || ticket.images || [],
-            assignedTo: ticket.assigned_to || ticket.assigned_agent || null,
-            lastResponse: ticket.last_response || null,
-            responseCount: ticket.response_count || ticket.replies || 0,
-            formattedDate: createdAt.toLocaleDateString(),
-            formattedTime: createdAt.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            source: "api",
-            subscription_id: ticket.subscription?.subscription_id,
-            subscription_name: ticket.subscription_name,
-          };
-        });
+          attachments:
+            ticket.attachments || ticket.images || ticket.pictures || [],
+          assignedTo:
+            ticket.assigned_to ||
+            ticket.assigned_agent ||
+            ticket.assigned_to_id ||
+            null,
+          lastResponse: ticket.last_response || null,
+          responseCount: ticket.response_count || ticket.replies || 0,
+          formattedDate: createdAt.toLocaleDateString(),
+          formattedTime: createdAt.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          source: "api",
+          subscription_id:
+            ticket.subscription?.subscription_id || ticket.subscription_id,
+          subscription_name:
+            ticket.subscription_name || ticket.subscription?.name,
+        };
+      });
 
-        return apiTickets;
-      }
-      return [];
+      console.log("✅ Processed API tickets:", apiTickets.length);
+      return apiTickets;
     } catch (error) {
+      console.log("❌ Fetch tickets error:", error.message);
+      if (error.response) {
+        console.log("Error status:", error.response.status);
+        console.log("Error data:", error.response.data);
+      }
       return [];
     }
   };
@@ -497,82 +775,79 @@ const Ticket = () => {
       setLoading(false);
     }
   };
+  // DEBUG: Log ticket data
+  useEffect(() => {
+    if (selectedTicket) {
+      console.log("Selected Ticket Attachments:", selectedTicket.attachments);
+      console.log("User Subdomain:", user?.branch?.subdomain);
+    }
+  }, [selectedTicket]);
 
   // ==================== RENDER TICKET IMAGES ====================
   const renderTicketImages = (attachments) => {
     if (!attachments || attachments.length === 0) return null;
 
-    // Filter out invalid attachments and extract URIs
-    const validAttachments = attachments
-      .filter((attachment) => {
-        if (!attachment) return false;
+    // ✅ EXPAND comma-separated images into real arrays
+    const expandedAttachments = attachments.flatMap((attachment) => {
+      if (!attachment) return [];
 
-        // Check various possible image source formats
-        const hasUri = attachment.uri || attachment.url || attachment.path;
-        const isString = typeof attachment === "string";
+      // Case: "img1.jpg,img2.jpg"
+      if (typeof attachment === "string" && attachment.includes(",")) {
+        return attachment.split(",").map((p) => p.trim());
+      }
 
-        return hasUri || isString;
-      })
+      return [attachment];
+    });
+
+    // ✅ Normalize every possible image shape
+    const validAttachments = expandedAttachments
       .map((attachment) => {
-        // Handle different attachment formats
+        if (!attachment) return null;
+
         if (typeof attachment === "string") {
-          // If it's already a string URL
-          return attachment;
-        } else if (attachment.uri) {
-          return attachment.uri;
-        } else if (attachment.url) {
-          return attachment.url;
-        } else if (attachment.path) {
-          return attachment.path;
+          return normalizeImageUrl(attachment);
         }
+
+        if (attachment?.uri) return normalizeImageUrl(attachment.uri);
+        if (attachment?.url) return normalizeImageUrl(attachment.url);
+        if (attachment?.path) return normalizeImageUrl(attachment.path);
+
         return null;
       })
-      .filter((uri) => uri && uri.length > 0);
+      .filter(Boolean)
+      .slice(0, 2); // 🔒 LIMIT TO 2 IMAGES ONLY
+
+    console.log("FINAL IMAGE LIST:", validAttachments);
 
     if (validAttachments.length === 0) return null;
 
     return (
       <View style={styles.imagesContainer}>
         <Text style={[styles.imagesLabel, { color: colors.textLight }]}>
-          Attached Images ({validAttachments.length}):
+          Attached Images ({validAttachments.length})
         </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.imagesScroll}
-        >
-          {validAttachments.map((imageUri, index) => {
 
-            return (
-              <TouchableOpacity
-                key={index}
-                style={styles.imageThumbnailContainer}
-                onPress={() => {
-                  setViewingImage(imageUri);
-                  setImageModalVisible(true);
-                }}
-                activeOpacity={0.8}
-              >
-                <Image
-                  source={{ uri: imageUri }}
-                  style={styles.imageThumbnail}
-                  resizeMode="cover"
-                  onError={(e) => {
-                  }}
-                  onLoad={() => {
-                  }}
-                />
-                <View
-                  style={[
-                    styles.imageOverlay,
-                    { backgroundColor: colors.imageOverlay },
-                  ]}
-                >
-                  <Ionicons name="expand" size={16} color="#fff" />
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {validAttachments.map((imageUri, index) => (
+            <TouchableOpacity
+              key={`ticket-image-${index}`}
+              style={styles.imageThumbnailContainer}
+              activeOpacity={0.85}
+              onPress={() => {
+                setViewingImage(imageUri);
+                setImageModalVisible(true);
+              }}
+            >
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.imageThumbnail}
+                resizeMode="cover"
+                onError={(e) =>
+                  console.log("❌ Image load failed:", imageUri, e.nativeEvent)
+                }
+              />
+            </TouchableOpacity>
+          ))}
         </ScrollView>
       </View>
     );
@@ -615,7 +890,6 @@ const Ticket = () => {
 
   // Handle viewing a specific ticket
   const handleViewTicket = async (ticket) => {
-
     // Show the local ticket immediately
     setSelectedTicket(ticket);
 
@@ -623,8 +897,6 @@ const Ticket = () => {
     if (ticket.id) {
       const latestTicket = await viewTicket(ticket.id);
       if (latestTicket) {
-
-
         // CRITICAL FIX: Preserve local attachments if API returns empty
         if (
           latestTicket.attachments &&
@@ -792,32 +1064,22 @@ const Ticket = () => {
 
   // Render empty state with refresh button
   const renderEmptyState = () => (
-    <View
-      style={[
-        styles.emptyContainer,
-        { backgroundColor: colors.surface },
-      ]}
-    >
+    <View style={[styles.emptyContainer, { backgroundColor: colors.surface }]}>
       {/* Sad face emoji */}
       <Text style={styles.sadEmoji}>🎟️</Text>
-      
+
       <Text style={[styles.emptyText, { color: colors.text }]}>
         No tickets found
       </Text>
-      <Text
-        style={[styles.emptySubtext, { color: colors.textLight }]}
-      >
+      <Text style={[styles.emptySubtext, { color: colors.textLight }]}>
         {statusFilter !== "all"
           ? `No ${formatStatusText(statusFilter).toLowerCase()} tickets`
           : "You don't have any support tickets yet"}
       </Text>
-      
+
       {/* Refresh Button */}
       <TouchableOpacity
-        style={[
-          styles.refreshButton,
-          { backgroundColor: colors.primary },
-        ]}
+        style={[styles.refreshButton, { backgroundColor: colors.primary }]}
         onPress={handleManualRefresh}
         activeOpacity={0.8}
       >
@@ -971,23 +1233,6 @@ const Ticket = () => {
                   </View>
                 </View>
 
-                {/* Source Badge */}
-                {selectedTicket?.source === "local" && (
-                  <View style={styles.sourceInfo}>
-                    <Ionicons
-                      name="information-circle"
-                      size={16}
-                      color={colors.warning}
-                    />
-                    <Text
-                      style={[styles.sourceText, { color: colors.warning }]}
-                    >
-                      This ticket is stored locally and may not be synced with
-                      the server
-                    </Text>
-                  </View>
-                )}
-
                 {/* Subject */}
                 <Text style={[styles.modalLabel, { color: colors.textLight }]}>
                   SUBJECT
@@ -996,30 +1241,133 @@ const Ticket = () => {
                   {selectedTicket?.subject}
                 </Text>
 
-                {/* Subscription Info */}
-                {selectedTicket?.subscription_id && (
+                {/* DESCRIPTION - Add this if not showing */}
+                {selectedTicket?.description && (
                   <>
                     <Text
                       style={[styles.modalLabel, { color: colors.textLight }]}
                     >
-                      SUBSCRIPTION
+                      DESCRIPTION
                     </Text>
-                    <Text style={[styles.modalValue, { color: colors.text }]}>
-                      ID: {selectedTicket.subscription_id}
-                      {selectedTicket.subscription_name &&
-                        ` • ${selectedTicket.subscription_name}`}
+                    <Text
+                      style={[styles.modalDescription, { color: colors.text }]}
+                    >
+                      {selectedTicket.description}
                     </Text>
                   </>
                 )}
 
-                {/* Images/Attachments - FIXED: This should now display properly */}
+                {/* READINGS SECTION - Add this */}
+                {selectedTicket?.readings && (
+                  <>
+                    <Text
+                      style={[styles.modalLabel, { color: colors.textLight }]}
+                    >
+                      METER READINGS
+                    </Text>
+                    <View
+                      style={[
+                        styles.readingsContainer,
+                        { backgroundColor: colors.surface + "80" },
+                      ]}
+                    >
+                      {typeof selectedTicket.readings === "string" ? (
+                        <Text
+                          style={[styles.readingText, { color: colors.text }]}
+                        >
+                          {selectedTicket.readings}
+                        </Text>
+                      ) : Array.isArray(selectedTicket.readings) ? (
+                        selectedTicket.readings.map((reading, index) => (
+                          <View key={index} style={styles.readingItem}>
+                            <Text
+                              style={[
+                                styles.readingLabel,
+                                { color: colors.textLight },
+                              ]}
+                            >
+                              Reading {index + 1}:
+                            </Text>
+                            <Text
+                              style={[
+                                styles.readingValue,
+                                { color: colors.text },
+                              ]}
+                            >
+                              {typeof reading === "object"
+                                ? JSON.stringify(reading)
+                                : reading}
+                            </Text>
+                          </View>
+                        ))
+                      ) : (
+                        <Text
+                          style={[styles.readingText, { color: colors.text }]}
+                        >
+                          {JSON.stringify(selectedTicket.readings)}
+                        </Text>
+                      )}
+                    </View>
+                  </>
+                )}
+
+                {/* Alternative: Check for meter_readings property */}
+                {!selectedTicket?.readings &&
+                  selectedTicket?.meter_readings && (
+                    <>
+                      <Text
+                        style={[styles.modalLabel, { color: colors.textLight }]}
+                      >
+                        METER READINGS
+                      </Text>
+                      <View
+                        style={[
+                          styles.readingsContainer,
+                          { backgroundColor: colors.surface + "80" },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.readingText, { color: colors.text }]}
+                        >
+                          {selectedTicket.meter_readings}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+
+                {/* Alternative: Check raw API response for readings */}
+                {!selectedTicket?.readings &&
+                  !selectedTicket?.meter_readings &&
+                  selectedTicket?.rawApiResponse?.readings && (
+                    <>
+                      <Text
+                        style={[styles.modalLabel, { color: colors.textLight }]}
+                      >
+                        METER READINGS
+                      </Text>
+                      <View
+                        style={[
+                          styles.readingsContainer,
+                          { backgroundColor: colors.surface + "80" },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.readingText, { color: colors.text }]}
+                        >
+                          {selectedTicket.rawApiResponse.readings}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+
+                {/* Images/Attachments */}
                 {selectedTicket?.attachments &&
                   selectedTicket.attachments.length > 0 &&
                   renderTicketImages(selectedTicket.attachments)}
 
                 {/* Date Information */}
                 <Text style={[styles.modalLabel, { color: colors.textLight }]}>
-                  CREATED ON
+                  SUBMITTED ON
                 </Text>
                 <Text style={[styles.modalValue, { color: colors.text }]}>
                   {selectedTicket?.createdAt
@@ -1038,20 +1386,6 @@ const Ticket = () => {
                     <Text style={[styles.modalValue, { color: colors.text }]}>
                       {selectedTicket.responseCount} response
                       {selectedTicket.responseCount !== 1 ? "s" : ""}
-                    </Text>
-                  </>
-                )}
-
-                {/* Assigned To */}
-                {selectedTicket?.assignedTo && (
-                  <>
-                    <Text
-                      style={[styles.modalLabel, { color: colors.textLight }]}
-                    >
-                      ASSIGNED TO
-                    </Text>
-                    <Text style={[styles.modalValue, { color: colors.text }]}>
-                      {selectedTicket.assignedTo}
                     </Text>
                   </>
                 )}
@@ -1089,17 +1423,11 @@ const Ticket = () => {
                   source={{ uri: viewingImage }}
                   style={styles.fullImage}
                   resizeMode="contain"
-                  onError={(e) => {
+                  onError={() => {
                     Alert.alert("Error", "Failed to load image");
                   }}
                 />
               )}
-
-              <View style={styles.fullImageFooter}>
-                <Text style={styles.fullImageInfo}>
-                  Pinch to zoom • Swipe to close
-                </Text>
-              </View>
             </SafeAreaView>
           </View>
         </Modal>
@@ -1482,6 +1810,32 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     opacity: 0.8,
+  },
+  readingsContainer: {
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  readingItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  readingLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  readingValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    fontFamily: "monospace",
+  },
+  readingText: {
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
 
