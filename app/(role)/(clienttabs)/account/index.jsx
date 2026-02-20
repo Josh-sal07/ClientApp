@@ -8,9 +8,6 @@ import {
   TouchableOpacity,
   View,
   StatusBar,
-  Platform,
-  Alert,
-  ActivityIndicator,
   RefreshControl,
   useColorScheme,
 } from "react-native";
@@ -19,6 +16,7 @@ import { setToken } from "../../../../store/token";
 import { useUserStore } from "../../../../store/user";
 import { useTheme } from "../../../../theme/ThemeContext";
 import axios from "axios";
+import CustomAlert from "../../../../components/CustomAlert";
 
 // API endpoints
 
@@ -33,6 +31,15 @@ function Profile() {
   const [profileData, setProfileData] = useState(null);
   const { mode } = useTheme();
   const systemColorScheme = useColorScheme();
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    confirmText: "OK",
+    cancelText: null,
+    onConfirm: null,
+  });
 
   // Determine effective mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
@@ -78,91 +85,149 @@ function Profile() {
   const colors = effectiveMode === "dark" ? COLORS.dark : COLORS.light;
 
   // Fetch profile data
-const fetchProfileData = async () => {
-  try {
-    const token = await AsyncStorage.getItem("token");
-    console.log("Token retrieved:", token ? "Yes" : "No");
+  const fetchProfileData = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      console.log("Token retrieved:", token ? "Yes" : "No");
 
-    if (!token) {
-      Alert.alert("Error", "Authentication required");
-      return;
-    }
+      if (!token) {
+        setAlertConfig({
+          visible: true,
+          title: "Authentication Required",
+          message: "Please login again.",
+          type: "error",
+        });
 
-    // Check if user.branch exists
-    if (!user?.branch?.subdomain) {
-      Alert.alert("Error", "Subdomain not found");
-      console.log("Current user object:", user);
-      return;
-    }
-
-    const subdomain = user.branch.subdomain;
-    const url = `https://${subdomain}.kazibufastnet.com/api/app/profile`;
-    console.log("Request URL:", url);
-
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      timeout: 10000,
-    });
-
-    console.log("Response status:", response.status);
-    console.log("Response data:", JSON.stringify(response.data, null, 2));
-
-    // More flexible response handling
-    if (response.status === 200) {
-      let profileData;
-      
-      if (response.data.success && response.data.data) {
-        profileData = response.data.data;
-      } else if (response.data.user) {
-        profileData = response.data.user;
-      } else if (response.data) {
-        profileData = response.data;
+        return;
       }
-      
-      if (profileData) {
-        setProfileData(profileData);
-        
-        // Update user store
-        setUser({
-          ...user,
-          name: profileData.name || user.name,
-          email: profileData.email || user.email,
-          contactNumber: profileData.contactNumber || profileData.mobile || user.contactNumber,
+
+      // Check if user.branch exists
+      if (!user?.branch?.subdomain) {
+        setAlertConfig({
+          visible: true,
+          title: "Configuration Error",
+          message: "Service configuration not found.",
+          type: "error",
         });
         return;
       }
-    }
-    
-    Alert.alert("Error", "Invalid response format from server");
 
-  } catch (error) {
-    console.log("Error details:", error);
-    console.log("Error message:", error.message);
-    console.log("Error response:", error.response?.data);
-    console.log("Error status:", error.response?.status);
-    
-    if (error.response?.status === 401) {
-      Alert.alert("Session Expired", "Please login again");
-      handleLogout();
-    } else if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
-      Alert.alert("Timeout", "Please check your internet connection");
-    } else if (error.response?.status === 404) {
-      Alert.alert("Error", "Profile endpoint not found");
-    } else if (error.response?.status === 403) {
-      Alert.alert("Error", "Access denied");
-    } else if (error.response?.status === 500) {
-      Alert.alert("Error", "Server error");
-    } else if (error.message?.includes("Network Error")) {
-      Alert.alert("Network Error", "Cannot connect to server");
-    } else {
-      Alert.alert("Error", "Failed to load profile data: " + (error.message || "Unknown error"));
+      const subdomain = user.branch.subdomain;
+      const url = `https://${subdomain}.kazibufastnet.com/api/app/profile`;
+      console.log("Request URL:", url);
+
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        timeout: 10000,
+      });
+
+      console.log("Response status:", response.status);
+      console.log("Response data:", JSON.stringify(response.data, null, 2));
+
+      // More flexible response handling
+      if (response.status === 200) {
+        let profileData;
+
+        if (response.data.success && response.data.data) {
+          profileData = response.data.data;
+        } else if (response.data.user) {
+          profileData = response.data.user;
+        } else if (response.data) {
+          profileData = response.data;
+        }
+
+        if (profileData) {
+          setProfileData(profileData);
+
+          // Update user store
+          setUser({
+            ...user,
+            name: profileData.name || user.name,
+            email: profileData.email || user.email,
+            contactNumber:
+              profileData.contactNumber ||
+              profileData.mobile ||
+              user.contactNumber,
+          });
+          return;
+        }
+      }
+
+      setAlertConfig({
+        visible: true,
+        title: "Server Error",
+        message: "Invalid response format from server.",
+        type: "error",
+      });
+    } catch (error) {
+      console.log("Error details:", error);
+      console.log("Error message:", error.message);
+      console.log("Error response:", error.response?.data);
+      console.log("Error status:", error.response?.status);
+
+      if (error.response?.status === 401) {
+        setAlertConfig({
+          visible: true,
+          title: "Session Expired",
+          message: "Please login again.",
+          type: "warning",
+          confirmText: "Login",
+          onConfirm: handleLogout,
+        });
+      } else if (
+        error.code === "ECONNABORTED" ||
+        error.message?.includes("timeout")
+      ) {
+        setAlertConfig({
+          visible: true,
+          title: "Connection Timeout",
+          message: "Please check your internet connection.",
+          type: "warning",
+        });
+      } else if (error.response?.status === 404) {
+        setAlertConfig({
+          visible: true,
+          title: "Endpoint Not Found",
+          message: "Profile endpoint not found.",
+          type: "error",
+        });
+      } else if (error.response?.status === 403) {
+        setAlertConfig({
+          visible: true,
+          title: "Access Denied",
+          message: "You don't have permission to access this.",
+          type: "error",
+        });
+      } else if (error.response?.status === 500) {
+        setAlertConfig({
+          visible: true,
+          title: "Server Error",
+          message: "Something went wrong on the server.",
+          type: "error",
+        });
+      } else if (error.message?.includes("Network Error")) {
+        setAlertConfig({
+          visible: true,
+          title: "Network Error",
+          message: "Cannot connect to server. Please check your connection.",
+          type: "error",
+        });
+      } else {
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message:
+            "Failed to load profile data: " +
+            (error.message || "Unknown error"),
+          type: "error",
+        });
+      }
     }
-  }
-};
+  };
 
   // Handle refresh
   const onRefresh = async () => {
@@ -189,36 +254,35 @@ const fetchProfileData = async () => {
     });
   };
 
-  const handleLogout = async () => {
-    Alert.alert("Confirm Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Yes, Logout",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            // Get the current phone number first
-            const phone = await AsyncStorage.getItem("phone");
+  const handleLogout = () => {
+    setAlertConfig({
+      visible: true,
+      title: "Confirm Logout",
+      message: "Are you sure you want to logout?",
+      type: "warning",
+      confirmText: "Yes, Logout",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        try {
+          await AsyncStorage.multiRemove([
+            "token",
+            "last_active_time",
+            "biometric_verified_session",
+            "has_logged_in",
+          ]);
 
-            // Only remove token and user session data
-            // DO NOT remove pin_set or phone!
-            await AsyncStorage.multiRemove([
-              "token",
-              "last_active_time",
-              "biometric_verified_session",
-               "has_logged_in" 
-            ]);
-
-            setToken(null);
-
-            // Go to phone verification (not login)
-            router.replace("/(auth)/(login)/login");
-          } catch (error) {
-            Alert.alert("Error", "Failed to logout properly");
-          }
-        },
+          setToken(null);
+          router.replace("/(auth)/(login)/login");
+        } catch (error) {
+          setAlertConfig({
+            visible: true,
+            title: "Error",
+            message: "Failed to logout properly.",
+            type: "error",
+          });
+        }
       },
-    ]);
+    });
   };
 
   // Format mobile number for display
@@ -393,6 +457,19 @@ const fetchProfileData = async () => {
         {/* Bottom padding */}
         <View style={styles.bottomPadding} />
       </ScrollView>
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        confirmText={alertConfig.confirmText}
+        cancelText={alertConfig.cancelText}
+        onConfirm={() => {
+          alertConfig.onConfirm?.();
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+        }}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }

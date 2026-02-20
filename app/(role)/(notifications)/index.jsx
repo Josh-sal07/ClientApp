@@ -4,7 +4,6 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   StyleSheet,
   StatusBar,
   RefreshControl,
@@ -19,6 +18,7 @@ import { useTheme } from "../../../theme/ThemeContext";
 import { useFocusEffect } from "expo-router";
 import { useCallback } from "react";
 import { useUserStore } from "../../../store/user";
+import CustomAlert from "../../../components/CustomAlert";
 
 export default function Notifications() {
   const router = useRouter();
@@ -79,6 +79,15 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    confirmText: "OK",
+    cancelText: null,
+    onConfirm: null,
+  });
 
   useEffect(() => {
     loadNotifications();
@@ -92,83 +101,104 @@ export default function Notifications() {
     }, [notifications.length]),
   );
 
-const loadNotifications = async () => {
-  try {
-    setLoading(true);
-    const token = await AsyncStorage.getItem("token");
-    
-    if (!token) {
-      Alert.alert("Session Expired", "Please login again");
-      router.replace("/(auth)/(login)/login");
-      return;
-    }
+  const loadNotifications = async () => {
+    try {
+      setLoading(true);
+      const token = await AsyncStorage.getItem("token");
 
-    if (!user || !user.branch) {
-      console.log("Waiting for user data...");
-      setLoading(false);
-      return;
-    }
+      if (!token) {
+        setAlertConfig({
+          visible: true,
+          title: "Session Expired",
+          message: "Please login again",
+          type: "error",
+          onConfirm: () => {
+            router.replace("/(auth)/(login)/login");
+          },
+        });
 
-    const subdomain = user.branch.subdomain;
-    
-    const res = await fetch(
-      `https://${subdomain}.kazibufastnet.com/api/app/notifications`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
+        return;
+      }
+
+      if (!user || !user.branch) {
+        console.log("Waiting for user data...");
+        setLoading(false);
+        return;
+      }
+
+      const subdomain = user.branch.subdomain;
+
+      const res = await fetch(
+        `https://${subdomain}.kazibufastnet.com/api/app/notifications`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
         },
-      },
-    );
+      );
 
-    if (!res.ok) {
-      throw new Error(`HTTP error! status: ${res.status}`);
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const json = await res.json();
+
+      // ✅ Debug: Log the actual response structure
+      console.log("API Response:", json);
+
+      // ✅ Check different possible response structures
+      let fetchedNotifications = [];
+
+      if (Array.isArray(json)) {
+        // Response is directly an array
+        fetchedNotifications = json;
+      } else if (json.notifications && Array.isArray(json.notifications)) {
+        // Response has notifications property
+        fetchedNotifications = json.notifications;
+      } else if (json.data && Array.isArray(json.data)) {
+        // Response has data property (common pagination format)
+        fetchedNotifications = json.data;
+      } else if (json.notifications && json.notifications.data) {
+        // Response has notifications.data (Laravel pagination)
+        fetchedNotifications = json.notifications.data;
+      } else {
+        // If we can't find the array, log the structure and use empty array
+        console.warn("Unexpected API response structure:", json);
+        fetchedNotifications = [];
+      }
+
+      const formatted = fetchedNotifications.map((n) => ({
+        ...n,
+        isRead: n.is_read === 1,
+        timestamp:
+          n.created_at ||
+          n.createdAt ||
+          n.timestamp ||
+          new Date().toISOString(),
+        title: n.title || n.subject || "Notification",
+        body:
+          n.body ||
+          n.message ||
+          n.content ||
+          "No additional details available.",
+        id: n.id || n.notification_id || Math.random().toString(),
+      }));
+
+      setNotifications(formatted);
+      setHasUnread(formatted.some((n) => !n.isRead));
+    } catch (e) {
+      console.error("Load notifications error:", e);
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: "Failed to load notifications",
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
     }
-
-    const json = await res.json();
-    
-    // ✅ Debug: Log the actual response structure
-    console.log("API Response:", json);
-    
-    // ✅ Check different possible response structures
-    let fetchedNotifications = [];
-    
-    if (Array.isArray(json)) {
-      // Response is directly an array
-      fetchedNotifications = json;
-    } else if (json.notifications && Array.isArray(json.notifications)) {
-      // Response has notifications property
-      fetchedNotifications = json.notifications;
-    } else if (json.data && Array.isArray(json.data)) {
-      // Response has data property (common pagination format)
-      fetchedNotifications = json.data;
-    } else if (json.notifications && json.notifications.data) {
-      // Response has notifications.data (Laravel pagination)
-      fetchedNotifications = json.notifications.data;
-    } else {
-      // If we can't find the array, log the structure and use empty array
-      console.warn("Unexpected API response structure:", json);
-      fetchedNotifications = [];
-    }
-
-    const formatted = fetchedNotifications.map((n) => ({
-      ...n,
-      isRead: n.is_read === 1,
-      timestamp: n.created_at || n.createdAt || n.timestamp || new Date().toISOString(),
-      title: n.title || n.subject || "Notification",
-      body: n.body || n.message || n.content || "No additional details available.",
-      id: n.id || n.notification_id || Math.random().toString(),
-    }));
-
-    setNotifications(formatted);
-    setHasUnread(formatted.some((n) => !n.isRead));
-  } catch (e) {
-    console.error("Load notifications error:", e);
-    Alert.alert("Error", "Failed to load notifications");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -194,71 +224,68 @@ const loadNotifications = async () => {
   const deleteSelected = async () => {
     if (selected.length === 0) return;
 
-    Alert.alert(
-      "Delete Notifications",
-      `Are you sure you want to delete ${selected.length} notification${selected.length !== 1 ? "s" : ""}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const token = await AsyncStorage.getItem("token");
-              if (!token) {
-                Alert.alert("Session Expired", "Please login again");
+    setAlertConfig({
+      visible: true,
+      title: "Delete Notifications",
+      message: `Are you sure you want to delete ${selected.length} notification${selected.length !== 1 ? "s" : ""}?`,
+      type: "warning",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        try {
+          const token = await AsyncStorage.getItem("token");
+          if (!token) {
+            setAlertConfig({
+              visible: true,
+              title: "Session Expired",
+              message: "Please login again",
+              type: "error",
+              onConfirm: () => {
                 router.replace("/(auth)/(login)/login");
-                return;
-              }
+              },
+            });
+            return;
+          }
 
-              if (!user || !user.branch) {
-                Alert.alert("Error", "User information not available");
-                return;
-              }
+          const subdomain = user.branch.subdomain;
 
-              const subdomain = user.branch.subdomain;
+          await fetch(
+            `https://${subdomain}.kazibufastnet.com/api/app/notifications/delete`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json",
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                selected: selected,
+              }),
+            },
+          );
 
-              const res = await fetch(
-                `https://${subdomain}.kazibufastnet.com/api/app/notifications/delete`,
-                {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: "application/json",
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    selected: selected,
-                  }),
-                },
-              );
+          setNotifications((prev) =>
+            prev.filter((n) => !selected.includes(n.id)),
+          );
+          clearSelection();
+          loadNotifications();
 
-              if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text);
-              }
-
-              // Update UI immediately
-              setNotifications((prev) =>
-                prev.filter((n) => !selected.includes(n.id)),
-              );
-              clearSelection();
-
-              // Refresh to get latest data
-              loadNotifications();
-
-              Alert.alert(
-                "Success",
-                `${selected.length} notification${selected.length !== 1 ? "s" : ""} deleted`,
-              );
-            } catch (error) {
-              console.error("Delete notifications error:", error);
-              Alert.alert("Error", "Failed to delete notifications");
-            }
-          },
-        },
-      ],
-    );
+          setAlertConfig({
+            visible: true,
+            title: "Success",
+            message: `${selected.length} notification deleted`,
+            type: "success",
+          });
+        } catch (error) {
+          setAlertConfig({
+            visible: true,
+            title: "Error",
+            message: "Failed to delete notifications",
+            type: "error",
+          });
+        }
+      },
+    });
   };
 
   const markAsRead = (id) => {
@@ -271,60 +298,84 @@ const loadNotifications = async () => {
     );
   };
 
-const markAllAsRead = async () => {
-  try {
-    const token = await AsyncStorage.getItem("token");
-    if (!token) {
-      Alert.alert("Session Expired", "Please login again");
-      router.replace("/(auth)/(login)/login");
-      return;
-    }
+  const markAllAsRead = async () => {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      if (!token) {
+        setAlertConfig({
+          visible: true,
+          title: "Session Expired",
+          message: "Your session has expired. Please login again.",
+          type: "error",
+          confirmText: "Login",
+          onConfirm: () => {
+            router.replace("/(auth)/(login)/login");
+          },
+        });
 
-    if (!user || !user.branch) {
-      Alert.alert("Error", "User information not available");
-      return;
-    }
+        return;
+      }
 
-    const subdomain = user.branch.subdomain;
+      if (!user || !user.branch) {
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: "User information not available",
+          type: "error",
+        });
+        return;
+      }
 
-    // ✅ Fix: Changed from 'marked_all_as_red' to 'mark_all_as_read'
-    const res = await fetch(
-      `https://${subdomain}.kazibufastnet.com/api/app/notifications/mark_all_as_read`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
+      const subdomain = user.branch.subdomain;
+
+      // ✅ Fix: Changed from 'marked_all_as_red' to 'mark_all_as_read'
+      const res = await fetch(
+        `https://${subdomain}.kazibufastnet.com/api/app/notifications/mark_all_as_read`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            selected: notifications.map((n) => n.id),
+          }),
         },
-        body: JSON.stringify({
-          selected: notifications.map((n) => n.id),
-        }),
-      },
-    );
+      );
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text);
+      }
+
+      // Update UI immediately
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setHasUnread(false);
+
+      setAlertConfig({
+        visible: true,
+        title: "Success",
+        message: "All notifications marked as read",
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Mark all as read error:", error);
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: "Failed to mark all as read",
+        type: "error",
+      });
     }
+  };
 
-    // Update UI immediately
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    setHasUnread(false);
-    
-    Alert.alert("Success", "All notifications marked as read");
-  } catch (error) {
-    console.error("Mark all as read error:", error);
-    Alert.alert("Error", "Failed to mark all as read");
-  }
-};
-
-// ✅ Fix useFocusEffect - always load when screen focuses
-useFocusEffect(
-  useCallback(() => {
-    loadNotifications();
-  }, []), // Empty dependency array - runs every time screen focuses
-);
+  // ✅ Fix useFocusEffect - always load when screen focuses
+  useFocusEffect(
+    useCallback(() => {
+      loadNotifications();
+    }, []), // Empty dependency array - runs every time screen focuses
+  );
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -615,6 +666,19 @@ useFocusEffect(
           }
         />
       )}
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        confirmText={alertConfig.confirmText}
+        cancelText={alertConfig.cancelText}
+        onConfirm={() => {
+          alertConfig.onConfirm?.();
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+        }}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }

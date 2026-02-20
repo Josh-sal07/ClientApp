@@ -217,36 +217,6 @@ const Home = () => {
       route: "/(role)/(subscriptionPlan)/plan",
       color: colors.primary,
     },
-    {
-      title: "Tickets",
-      icon: require("../../../../assets/icons/ticket.png"),
-      route: "/(role)/(clienttabs)/tickets",
-      color: colors.primary,
-    },
-    {
-      title: "Subscriptions",
-      icon: require("../../../../assets/icons/receipt.png"),
-      route: "/(role)/(clienttabs)/subscriptions",
-      color: colors.primary,
-    },
-    {
-      title: "Tickets",
-      icon: require("../../../../assets/icons/ticket.png"),
-      route: "/(role)/(clienttabs)/tickets",
-      color: colors.primary,
-    },
-    {
-      title: "Subscriptions",
-      icon: require("../../../../assets/icons/receipt.png"),
-      route: "/(role)/(clienttabs)/subscriptions",
-      color: colors.primary,
-    },
-    {
-      title: "Tickets",
-      icon: require("../../../../assets/icons/ticket.png"),
-      route: "/(role)/(clienttabs)/tickets",
-      color: colors.primary,
-    },
   ];
 
   // Fetch all data from the single /api/app/home endpoint

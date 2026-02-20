@@ -2,7 +2,7 @@
   "expo": {
     "scheme": "kazibufasapp",
     "name": "KazibufastApp",
-    "slug": "subscribers-application",
+    "slug": "kzbu-client",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/logokazbu.png",
@@ -42,9 +42,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "627c5303-73a7-4717-8dd1-fcf2cb3aadf1"
+        "projectId": "c6caebce-95d1-4abf-9de4-b04541860ab9"
       }
     },
-    "owner": "joshuasalabe"
+    "owner": "joshuasalabe07"
   }
 }

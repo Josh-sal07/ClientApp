@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { Alert } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import CustomAlert from "../../../components/CustomAlert";
 
 export default function useSetupPinLogic() {
   const router = useRouter();
@@ -16,6 +17,13 @@ export default function useSetupPinLogic() {
 
   const pinRefs = useRef([]);
   const confirmPinRefs = useRef([]);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    onConfirm: null,
+  });
 
   useEffect(() => {
     const loadPhone = async () => {
@@ -23,7 +31,7 @@ export default function useSetupPinLogic() {
         // Priority 1: Phone from params (from OTP verification)
         if (paramPhone) {
           setPhone(paramPhone);
-        } 
+        }
         // Priority 2: Phone from storage
         else {
           const savedPhone = await AsyncStorage.getItem("phone");
@@ -31,23 +39,36 @@ export default function useSetupPinLogic() {
             setPhone(savedPhone);
             console.log("Loaded phone from storage:", savedPhone);
           } else {
-            Alert.alert("Error", "Phone number not found. Please verify again.");
-            router.replace("/(auth)/(phone-verify)/phone-verify");
+            setAlertConfig({
+              visible: true,
+              title: "Error",
+              message: "Phone number not found. Please verify again.",
+              type: "error",
+              onConfirm: () => {
+                router.replace("/(auth)/(phone-verify)/phone-verify");
+              },
+            });
           }
         }
       } catch (error) {
-        console.error("Failed to load phone:", error);
-        Alert.alert("Error", "Failed to load phone number");
-        router.replace("/(auth)/(phone-verify)/phone-verify");
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: "Failed to load phone number",
+          type: "error",
+          onConfirm: () => {
+            router.replace("/(auth)/(phone-verify)/phone-verify");
+          },
+        });
       }
     };
-    
+
     loadPhone();
   }, [paramPhone, router]);
 
   // Handle PIN input change
   const handlePinChange = (index, value, isConfirm = false) => {
-    if (!/^\d?$/.test(value)) return; 
+    if (!/^\d?$/.test(value)) return;
     const arr = isConfirm ? [...confirmPin] : [...pin];
     arr[index] = value;
     isConfirm ? setConfirmPin(arr) : setPin(arr);
@@ -78,7 +99,12 @@ export default function useSetupPinLogic() {
   // Submit PIN
   const handleSubmit = async () => {
     if (!phone) {
-      Alert.alert("Error", "Phone number not found. Please login again.");
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: "Phone number not found. Please login again.",
+        type: "error",
+      });
       return;
     }
 
@@ -86,12 +112,22 @@ export default function useSetupPinLogic() {
     const confirmPinString = confirmPin.join("");
 
     if (pinString.length !== 6 || confirmPinString.length !== 6) {
-      Alert.alert("Error", "Please enter and confirm your 6-digit PIN");
+      setAlertConfig({
+        visible: true,
+        title: "Invalid PIN",
+        message: "Please enter and confirm your 6-digit PIN",
+        type: "warning",
+      });
       return;
     }
 
     if (pinString !== confirmPinString) {
-      Alert.alert("Error", "PINs do not match");
+      setAlertConfig({
+        visible: true,
+        title: "PIN Mismatch",
+        message: "PINs do not match",
+        type: "warning",
+      });
       return;
     }
 
@@ -111,7 +147,7 @@ export default function useSetupPinLogic() {
             mobile_number: formattedPhone,
             pin: pinString,
           }),
-        }
+        },
       );
 
       const text = await response.text();
@@ -121,7 +157,7 @@ export default function useSetupPinLogic() {
       } catch {
         data = { message: text };
       }
-  
+
       if (!response.ok) {
         throw new Error(data.message || "Failed to set PIN!");
       }
@@ -130,26 +166,30 @@ export default function useSetupPinLogic() {
       await AsyncStorage.multiSet([
         ["phone", formattedPhone],
         ["pin_set", "true"],
-        [`pin_set_${formattedPhone}`, "true"]
+        [`pin_set_${formattedPhone}`, "true"],
       ]);
 
-      Alert.alert("Success", "PIN set successfully!", [
-        {
-          text: "OK",
-          onPress: () => {
-            // Clear any temp data
-            AsyncStorage.removeItem("temp_phone");
-            
-            // Navigate to login with phone parameter
-            router.replace({
-              pathname: "/(auth)/(login)/login",
-              params: { phone: formattedPhone }
-            });
-          },
+      setAlertConfig({
+        visible: true,
+        title: "Success",
+        message: "PIN set successfully!",
+        type: "success",
+        onConfirm: async () => {
+          await AsyncStorage.removeItem("temp_phone");
+
+          router.replace({
+            pathname: "/(auth)/(login)/login",
+            params: { phone: formattedPhone },
+          });
         },
-      ]);
+      });
     } catch (err) {
-      Alert.alert("Error", err.message || "Something went wrong");
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: err.message || "Something went wrong",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -169,5 +209,7 @@ export default function useSetupPinLogic() {
     handlePinChange,
     handlePinKeyPress,
     handleSubmit,
+    alertConfig,
+    setAlertConfig,
   };
 }

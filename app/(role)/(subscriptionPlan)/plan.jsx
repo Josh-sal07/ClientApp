@@ -24,51 +24,10 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useUserStore } from "../../../store/user";
+import { Calendar } from "react-native-calendars";
+
 
 const { width, height } = Dimensions.get("window");
-
-const DEFAULT_PLANS = [
-  {
-    id: "basic",
-    name: "Basic",
-    speed: "10 Mbps",
-    price: "₱799/mo",
-    icon: "rocket-outline",
-    description: "Perfect for browsing & social media",
-  },
-  {
-    id: "standard",
-    name: "Standard",
-    speed: "25 Mbps",
-    price: "₱1,299/mo",
-    icon: "flash-outline",
-    description: "Ideal for HD streaming & gaming",
-  },
-  {
-    id: "premium",
-    name: "Premium",
-    speed: "50 Mbps",
-    price: "₱1,999/mo",
-    icon: "speedometer-outline",
-    description: "Great for multiple devices",
-  },
-  {
-    id: "business",
-    name: "Business",
-    speed: "100 Mbps",
-    price: "₱3,999/mo",
-    icon: "business-outline",
-    description: "For small to medium business",
-  },
-  {
-    id: "enterprise",
-    name: "Enterprise",
-    speed: "200 Mbps",
-    price: "₱7,999/mo",
-    icon: "infinite-outline",
-    description: "High-performance dedicated",
-  },
-];
 
 function formatLongDate(date) {
   try {
@@ -940,7 +899,7 @@ export default function WifiPlanUpgradeScreen() {
             <Ionicons name="chevron-down" size={20} color={colors.primary} />
           </TouchableOpacity>
 
-          {showDatePicker && (
+          {/* {showDatePicker && (
             <DateTimePicker
               value={selectedDate}
               mode="date"
@@ -948,8 +907,9 @@ export default function WifiPlanUpgradeScreen() {
               onChange={handleDateChange}
               minimumDate={new Date()}
               themeVariant={effectiveMode}
+              accentColor={colors.primary}
             />
-          )}
+          )} */}
 
           {/* Summary */}
           {selectedSubscription && selectedPlan && (
@@ -1102,6 +1062,66 @@ export default function WifiPlanUpgradeScreen() {
         onClose={() => setActiveModal(null)}
         renderItem={renderPlanRow}
       />
+      
+      <Modal
+  visible={showDatePicker}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setShowDatePicker(false)}
+>
+  <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
+    <View
+      style={[
+        styles.modalContent,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <Text style={[styles.modalTitle, { color: colors.text }]}>
+        Select Activation Date
+      </Text>
+
+      <Calendar
+        current={toYMD(selectedDate)}
+        minDate={toYMD(new Date())}
+        onDayPress={(day) => {
+          setSelectedDate(new Date(day.dateString));
+          setShowDatePicker(false);
+        }}
+        theme={{
+          backgroundColor: colors.surface,
+          calendarBackground: colors.surface,
+          textSectionTitleColor: colors.textMuted,
+          selectedDayBackgroundColor: colors.primary,
+          selectedDayTextColor: "#FFFFFF",
+          todayTextColor: colors.primary,
+          dayTextColor: colors.text,
+          monthTextColor: colors.text,
+          arrowColor: colors.primary,
+          textDisabledColor: colors.textMuted,
+        }}
+        markedDates={{
+          [toYMD(selectedDate)]: {
+            selected: true,
+            selectedColor: colors.primary,
+          },
+        }}
+      />
+
+      <TouchableOpacity
+        style={[styles.modalButton, { backgroundColor: colors.primary }]}
+        onPress={() => setShowDatePicker(false)}
+      >
+        <Text style={[styles.modalButtonText, { color: colors.white }]}>
+          Cancel
+        </Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
+
 
       {/* Success Modal */}
       <Modal

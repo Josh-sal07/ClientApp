@@ -12,7 +12,6 @@ import {
   TouchableWithoutFeedback,
   RefreshControl,
   Animated,
-  Alert,
   Image,
   Dimensions,
   StatusBar,
@@ -25,6 +24,7 @@ import { useUserStore } from "../../../../store/user";
 import axios from "axios";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { sharedScrollY } from "../../../../shared/sharedScroll";
+import CustomAlert from "../../../../components/CustomAlert";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -39,6 +39,12 @@ const Ticket = () => {
   const user = useUserStore((state) => state.user);
   const { mode } = useTheme();
   const systemColorScheme = useColorScheme();
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
 
   // Determine effective theme mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
@@ -209,19 +215,35 @@ const Ticket = () => {
   const viewTicket = async (ticketId) => {
     try {
       if (!ticketId) {
-        Alert.alert("Error", "Ticket ID is required");
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: "Ticket ID is required",
+          type: "error",
+        });
+
         return null;
       }
 
       const token = await getToken();
       if (!token) {
-        Alert.alert("Error", "Authentication required");
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: "Authentication required",
+          type: "error",
+        });
         return null;
       }
 
       // Check if user has subdomain
       if (!user?.branch?.subdomain) {
-        Alert.alert("Error", "Subdomain not found");
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: "Subdomain not found",
+          type: "error",
+        });
         console.log("User object:", user);
         return null;
       }
@@ -503,10 +525,12 @@ const Ticket = () => {
         }
       }
 
-      Alert.alert(
-        "Error",
-        `Failed to load ticket: ${error.message || "Unknown error"}`,
-      );
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: `Failed to load ticket: ${error.message || "Unknown error"}`,
+        type: "error",
+      });
 
       return null;
     }
@@ -768,7 +792,13 @@ const Ticket = () => {
       calculateStats(allTickets);
       setLastRefresh(new Date());
     } catch (error) {
-      Alert.alert("Error", "Failed to load tickets. Please try again.");
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: "Failed to load tickets. Please try again.",
+        type: "error",
+      });
+
       setTickets([]);
       setFilteredTickets([]);
     } finally {
@@ -1424,7 +1454,12 @@ const Ticket = () => {
                   style={styles.fullImage}
                   resizeMode="contain"
                   onError={() => {
-                    Alert.alert("Error", "Failed to load image");
+                    setAlertConfig({
+                      visible: true,
+                      title: "Image Error",
+                      message: "Failed to load image",
+                      type: "error",
+                    });
                   }}
                 />
               )}

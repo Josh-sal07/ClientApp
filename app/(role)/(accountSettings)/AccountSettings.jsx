@@ -9,23 +9,24 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  Alert,
   Dimensions,
   Platform,
   ActivityIndicator,
   useColorScheme,
-  theme
+  theme,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from "@react-navigation/native";
+import CustomAlert from "../../../components/CustomAlert";
 
-const { width, height } = Dimensions.get('window');
+const { width, height } = Dimensions.get("window");
 
-const API_EDIT_PROFILE_URL = "https://staging.kazibufastnet.com/api/app/profile/update";
+const API_EDIT_PROFILE_URL =
+  "https://staging.kazibufastnet.com/api/app/profile/update";
 
 const AccountSettings = () => {
   const user = useUserStore((state) => state.user);
@@ -33,8 +34,17 @@ const AccountSettings = () => {
   const setUser = useUserStore((state) => state.setUser);
   const { mode } = useTheme();
   const systemColorScheme = useColorScheme();
-    // Determine effective mode
-    const effectiveMode = mode === "system" ? systemColorScheme : mode;
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    confirmText: "OK",
+    onConfirm: null,
+  });
+
+  // Determine effective mode
+  const effectiveMode = mode === "system" ? systemColorScheme : mode;
 
   // Define colors based on theme
   const COLORS = {
@@ -83,10 +93,10 @@ const AccountSettings = () => {
       gradientEnd: "#032829",
       gradientAlt: "#0b1515",
       gradientAlt1: "#032829",
-    }
+    },
   };
-  
-   const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
+
+  const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -122,50 +132,66 @@ const AccountSettings = () => {
   // Reset StatusBar when screen is focused
   useFocusEffect(
     React.useCallback(() => {
-      StatusBar.setBarStyle('light-content');
-      if (Platform.OS === 'android') {
-        StatusBar.setBackgroundColor('transparent');
+      StatusBar.setBarStyle("light-content");
+      if (Platform.OS === "android") {
+        StatusBar.setBackgroundColor("transparent");
         StatusBar.setTranslucent(true);
       }
-      
+
       return () => {
         // Optional cleanup
       };
-    }, [])
+    }, []),
   );
 
   const handleHeaderTabPress = (tabName) => {
     setActiveHeaderTab(tabName);
   };
 
- const handleSave = async () => {
+  const handleSave = async () => {
     // Validate required fields
     if (!form.name.trim()) {
-      Alert.alert("Validation Error", "Name is required");
+      setAlertConfig({
+        visible: true,
+        title: "Validation Error",
+        message: "Name is required",
+        type: "warning",
+      });
+
       return;
     }
 
     setIsSaving(true);
-    
+
     try {
       // Get authentication token
       const token = await AsyncStorage.getItem("token");
-      
+
       if (!token) {
-        Alert.alert("Error", "Authentication required");
-        router.back();
+        setAlertConfig({
+          visible: true,
+          title: "Authentication Required",
+          message: "Please login again.",
+          type: "error",
+          onConfirm: () => router.back(),
+        });
         return;
       }
 
       // Check if user.branch exists
       if (!user?.branch?.subdomain) {
-        Alert.alert("Error", "Subdomain not found");
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: "Subdomain not found",
+          type: "error",
+        });
         console.log("Current user object:", user);
         return;
       }
 
       const subdomain = user.branch.subdomain;
-      
+
       // Prepare data for backend
       const updateData = {
         name: form.name.trim(),
@@ -178,7 +204,7 @@ const AccountSettings = () => {
 
       // Use the correct URL with subdomain
       const API_URL = `https://${subdomain}.kazibufastnet.com/api/app/profile/update`;
-      
+
       console.log("Update URL:", API_URL);
       console.log("Update data:", updateData);
 
@@ -186,8 +212,8 @@ const AccountSettings = () => {
       const response = await fetch(API_URL, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${token}`,
-          "Accept": "application/json",
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
           "Content-Type": "application/json",
         },
         body: JSON.stringify(updateData),
@@ -196,7 +222,7 @@ const AccountSettings = () => {
       const responseText = await response.text();
       console.log("Response status:", response.status);
       console.log("Response text:", responseText);
-      
+
       let result;
       try {
         result = JSON.parse(responseText);
@@ -208,28 +234,29 @@ const AccountSettings = () => {
 
       // Check different response formats
       if (response.ok) {
-        if (result.success === true || result.status === "success" || result.message?.includes("success")) {
+        if (
+          result.success === true ||
+          result.status === "success" ||
+          result.message?.includes("success")
+        ) {
           // Update local user store with backend response
           const updatedUser = {
             ...user,
             ...updateData,
           };
-          
+
           await setUser(updatedUser);
-          
+
           setIsEditing(false);
-          Alert.alert(
-            "Success!",
-            result.message || "Your profile has been updated successfully",
-            [
-              {
-                text: "OK",
-                onPress: () => {
-                  loadUser();
-                }
-              }
-            ]
-          );
+          setAlertConfig({
+            visible: true,
+            title: "Success",
+            message:
+              result.message || "Your profile has been updated successfully",
+            type: "success",
+            onConfirm: () => loadUser(),
+          });
+
           return;
         }
       }
@@ -238,9 +265,16 @@ const AccountSettings = () => {
       if (response.status === 401) {
         throw new Error("Session expired. Please login again.");
       } else if (response.status === 422) {
-        throw new Error("Validation error: " + (result.errors ? Object.values(result.errors).join(", ") : "Invalid data"));
+        throw new Error(
+          "Validation error: " +
+            (result.errors
+              ? Object.values(result.errors).join(", ")
+              : "Invalid data"),
+        );
       } else if (response.status === 400) {
-        throw new Error(result.message || "Bad request. Please check your data.");
+        throw new Error(
+          result.message || "Bad request. Please check your data.",
+        );
       } else if (response.status === 404) {
         throw new Error("API endpoint not found. Please contact support.");
       } else if (response.status === 500) {
@@ -248,27 +282,31 @@ const AccountSettings = () => {
       } else {
         throw new Error(result.message || `Update failed (${response.status})`);
       }
-
     } catch (error) {
       console.log("Save error:", error);
-      
+
       if (error.message === "Network request failed") {
-        Alert.alert(
-          "Network Error",
-          "Please check your internet connection and try again.",
-          [{ text: "OK" }]
-        );
+        setAlertConfig({
+          visible: true,
+          title: "Network Error",
+          message: "Please check your internet connection and try again.",
+          type: "error",
+        });
       } else if (error.message.includes("timeout")) {
-        Alert.alert(
-          "Timeout",
-          "The request took too long. Please try again.",
-          [{ text: "OK" }]
-        );
+        setAlertConfig({
+          visible: true,
+          title: "Timeout",
+          message: "The request took too long. Please try again.",
+          type: "warning",
+        });
       } else {
-        Alert.alert(
-          "Update Failed",
-          error.message || "Could not update profile. Please try again."
-        );
+        setAlertConfig({
+          visible: true,
+          title: "Update Failed",
+          message:
+            error.message || "Could not update profile. Please try again.",
+          type: "error",
+        });
       }
     } finally {
       setIsSaving(false);
@@ -292,7 +330,7 @@ const AccountSettings = () => {
   if (!user) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <StatusBar 
+        <StatusBar
           barStyle="light-content"
           backgroundColor="transparent"
           translucent={true}
@@ -303,9 +341,9 @@ const AccountSettings = () => {
           end={{ x: 1, y: 0 }}
           style={styles.headerGradient}
         >
-          <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+          <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
             <View style={styles.headerTop}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.backButton}
                 onPress={() => router.back()}
               >
@@ -316,28 +354,49 @@ const AccountSettings = () => {
             </View>
           </SafeAreaView>
         </LinearGradient>
-        
+
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textLight }]}>Loading profile...</Text>
+          <Text style={[styles.loadingText, { color: colors.textLight }]}>
+            Loading profile...
+          </Text>
         </View>
       </View>
     );
   }
 
-  const renderInput = (label, value, onChange, placeholder = "", icon = null, editable = true) => (
+  const renderInput = (
+    label,
+    value,
+    onChange,
+    placeholder = "",
+    icon = null,
+    editable = true,
+  ) => (
     <View style={styles.inputContainer}>
       <View style={styles.labelRow}>
-        {icon && <Ionicons name={icon} size={18} color={colors.primary} style={styles.inputIcon} />}
-        <Text style={[styles.inputLabel, { color: colors.primary }]}>{label}</Text>
+        {icon && (
+          <Ionicons
+            name={icon}
+            size={18}
+            color={colors.primary}
+            style={styles.inputIcon}
+          />
+        )}
+        <Text style={[styles.inputLabel, { color: colors.primary }]}>
+          {label}
+        </Text>
       </View>
       {isEditing && editable ? (
         <TextInput
-          style={[styles.input, { 
-            color: colors.text,
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-          }]}
+          style={[
+            styles.input,
+            {
+              color: colors.text,
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
           value={value}
           placeholder={placeholder || label}
           onChangeText={onChange}
@@ -345,20 +404,31 @@ const AccountSettings = () => {
           editable={!isSaving}
         />
       ) : (
-        <Text style={[styles.inputValue, { color: colors.text }]}>{value || "Not set"}</Text>
+        <Text style={[styles.inputValue, { color: colors.text }]}>
+          {value || "Not set"}
+        </Text>
       )}
       <View style={[styles.inputBorder, { backgroundColor: colors.border }]} />
     </View>
   );
 
   const renderSection = (title, children) => (
-    <View style={[styles.section, { 
-      backgroundColor: colors.surface,
-      borderColor: colors.primary + '20',
-      shadowColor: theme === 'dark' ? 'transparent' : '#000',
-    }]}>
-      <View style={[styles.sectionHeader, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+    <View
+      style={[
+        styles.section,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.primary + "20",
+          shadowColor: theme === "dark" ? "transparent" : "#000",
+        },
+      ]}
+    >
+      <View
+        style={[styles.sectionHeader, { borderBottomColor: colors.border }]}
+      >
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          {title}
+        </Text>
       </View>
       {children}
     </View>
@@ -366,23 +436,28 @@ const AccountSettings = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar 
+      <StatusBar
         barStyle="light-content"
         backgroundColor="transparent"
         translucent={true}
       />
-      
+
       {/* Gradient Header - This will extend under the status bar */}
       <LinearGradient
-        colors={[colors.gradientEnd,colors.gradientEnd, colors.gradientEnd, colors.gradientEnd ]}
+        colors={[
+          colors.gradientEnd,
+          colors.gradientEnd,
+          colors.gradientEnd,
+          colors.gradientEnd,
+        ]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.headerGradient}
       >
-        <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+        <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
           {/* Back Button and Title */}
           <View style={styles.headerTop}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => router.back()}
             >
@@ -390,7 +465,7 @@ const AccountSettings = () => {
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Account Settings</Text>
             {isEditing ? (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.cancelHeaderButton}
                 onPress={handleCancel}
                 disabled={isSaving}
@@ -410,27 +485,37 @@ const AccountSettings = () => {
         showsVerticalScrollIndicator={false}
       >
         {/* Account Info Card */}
-        <View style={[styles.statsCard, { 
-          backgroundColor: colors.surface,
-          borderColor: colors.success + '80',
-          shadowColor: theme === 'dark' ? 'transparent' : '#000',
-        }]}>
+        <View
+          style={[
+            styles.statsCard,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.success + "80",
+              shadowColor: theme === "dark" ? "transparent" : "#000",
+            },
+          ]}
+        >
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={[styles.statValue, { color: colors.text }]}>
                 {user.mobile_number ? user.mobile_number.slice(-4) : "N/A"}
               </Text>
-              <Text style={[styles.statLabel, { color: colors.textLight }]}>Last 4 Digits</Text>
+              <Text style={[styles.statLabel, { color: colors.textLight }]}>
+                Last 4 Digits
+              </Text>
             </View>
-            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+            <View
+              style={[styles.statDivider, { backgroundColor: colors.border }]}
+            />
             <View style={styles.statItem}>
               <Text style={[styles.statValue, { color: colors.primary }]}>
                 {user.id ? `#${user.id.toString().slice(-6)}` : "N/A"}
               </Text>
-              <Text style={[styles.statLabel, { color: colors.textLight }]}>Account ID</Text>
+              <Text style={[styles.statLabel, { color: colors.textLight }]}>
+                Account ID
+              </Text>
             </View>
             <View style={[styles.statDivider]} />
-           
           </View>
         </View>
 
@@ -443,17 +528,17 @@ const AccountSettings = () => {
               form.name,
               (v) => setForm({ ...form, name: v }),
               "Enter your full name",
-              "person-outline"
+              "person-outline",
             )}
-            
+
             {renderInput(
               "Phone Number",
               form.mobile_number,
               (v) => setForm({ ...form, mobile_number: v }),
               "Enter phone number",
-              "call-outline"
+              "call-outline",
             )}
-          </>
+          </>,
         )}
 
         {/* Address */}
@@ -465,83 +550,121 @@ const AccountSettings = () => {
               form.street,
               (v) => setForm({ ...form, street: v }),
               "Enter street address",
-              "home-outline"
+              "home-outline",
             )}
-            
+
             {renderInput(
               "Barangay",
               form.barangay,
               (v) => setForm({ ...form, barangay: v }),
               "Enter barangay",
-              "location-outline"
+              "location-outline",
             )}
-            
+
             {renderInput(
               "Town/City",
               form.town,
               (v) => setForm({ ...form, town: v }),
               "Enter town/city",
-              "business-outline"
+              "business-outline",
             )}
-            
+
             {renderInput(
               "Province",
               form.province,
               (v) => setForm({ ...form, province: v }),
               "Enter province",
-              "map-outline"
+              "map-outline",
             )}
-          </>
+          </>,
         )}
 
         {/* Action Button */}
         <View style={styles.actionContainer}>
           {isEditing ? (
-            <TouchableOpacity 
-              style={[styles.saveButton, { 
-                backgroundColor: isSaving ? colors.gray : colors.primary,
-                opacity: isSaving ? 0.7 : 1,
-              }]}
+            <TouchableOpacity
+              style={[
+                styles.saveButton,
+                {
+                  backgroundColor: isSaving ? colors.gray : colors.primary,
+                  opacity: isSaving ? 0.7 : 1,
+                },
+              ]}
               onPress={handleSave}
               disabled={isSaving}
             >
               {isSaving ? (
                 <ActivityIndicator size="small" color={colors.white} />
               ) : (
-                <Ionicons name="checkmark-circle" size={20} color={colors.white} />
+                <Ionicons
+                  name="checkmark-circle"
+                  size={20}
+                  color={colors.white}
+                />
               )}
               <Text style={styles.saveButtonText}>
                 {isSaving ? "Saving..." : "Save Changes"}
               </Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity 
-              style={[styles.editButton, { 
-                backgroundColor: colors.surface,
-                borderColor: colors.primary,
-                shadowColor: theme === 'dark' ? 'transparent' : '#000',
-              }]}
+            <TouchableOpacity
+              style={[
+                styles.editButton,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.primary,
+                  shadowColor: theme === "dark" ? "transparent" : "#000",
+                },
+              ]}
               onPress={() => setIsEditing(true)}
             >
-              <Ionicons name="create-outline" size={20} color={colors.success} />
-              <Text style={[styles.editButtonText, { color: colors.success }]}>Edit Profile</Text>
+              <Ionicons
+                name="create-outline"
+                size={20}
+                color={colors.success}
+              />
+              <Text style={[styles.editButtonText, { color: colors.success }]}>
+                Edit Profile
+              </Text>
             </TouchableOpacity>
           )}
         </View>
 
         {/* Info Box */}
-        <View style={[styles.infoBox, { 
-          backgroundColor: colors.surface + '90',
-          borderColor: colors.border,
-        }]}>
-          <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+        <View
+          style={[
+            styles.infoBox,
+            {
+              backgroundColor: colors.surface + "90",
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Ionicons
+            name="information-circle-outline"
+            size={20}
+            color={colors.primary}
+          />
           <Text style={[styles.infoText, { color: colors.textLight }]}>
-            Changes will be saved to our servers and reflected across all devices.
+            Changes will be saved to our servers and reflected across all
+            devices.
           </Text>
         </View>
-        
+
         <View style={styles.bottomSpacer} />
       </ScrollView>
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        confirmText={alertConfig.confirmText}
+        onConfirm={() => {
+          alertConfig.onConfirm?.();
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+        }}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 };
@@ -554,48 +677,48 @@ const styles = StyleSheet.create({
   },
   // Gradient Header Styles - Extends under status bar
   headerGradient: {
-    paddingTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight,
-    shadowColor: '#000',
+    paddingTop: Platform.OS === "ios" ? 0 : StatusBar.currentHeight,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 10,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   headerSafeArea: {
-    paddingTop: Platform.OS === 'ios' ? 50 : 0,
+    paddingTop: Platform.OS === "ios" ? 50 : 0,
     paddingBottom: 20,
     paddingHorizontal: 20,
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 15,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
   cancelHeaderButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   cancelHeaderText: {
     fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '500',
+    color: "#FFFFFF",
+    fontWeight: "500",
   },
   headerRightPlaceholder: {
     width: 40,
@@ -604,17 +727,17 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   userEmail: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginBottom: 5,
   },
   deviceInfo: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: "rgba(255, 255, 255, 0.8)",
     fontSize: 14,
   },
   headerTabsContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginBottom: 20,
   },
   headerTab: {
@@ -623,44 +746,44 @@ const styles = StyleSheet.create({
   },
   activeHeaderTab: {
     borderBottomWidth: 2,
-    borderBottomColor: '#FFFFFF',
+    borderBottomColor: "#FFFFFF",
   },
   headerTabText: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: "rgba(255, 255, 255, 0.6)",
     fontSize: 16,
   },
   activeHeaderTabText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
   cloudBackupContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     padding: 15,
     borderRadius: 10,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 20,
   },
   cloudBackupTitle: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginBottom: 5,
   },
   cloudBackupSubtitle: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: "rgba(255, 255, 255, 0.8)",
     fontSize: 14,
   },
   bottomNavContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
   },
   bottomNavItem: {
     paddingVertical: 8,
     paddingHorizontal: 5,
   },
   bottomNavText: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: "rgba(255, 255, 255, 0.8)",
     fontSize: 12,
   },
   scrollView: {
@@ -682,13 +805,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   statItem: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: "center",
   },
   statDivider: {
     width: 1,
@@ -696,12 +819,12 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
-    textAlign: 'center',
+    textAlign: "center",
   },
   section: {
     marginBottom: 16,
@@ -720,14 +843,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   inputContainer: {
     marginBottom: 20,
   },
   labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 8,
   },
   inputIcon: {
@@ -735,19 +858,19 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
+    fontWeight: "600",
+    textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   inputValue: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
     paddingVertical: 8,
     minHeight: 24,
   },
   input: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
     paddingVertical: 12,
     paddingHorizontal: 12,
     minHeight: 24,
@@ -762,9 +885,9 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 16,
     borderRadius: 12,
     borderWidth: 2,
@@ -775,13 +898,13 @@ const styles = StyleSheet.create({
   },
   editButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     marginLeft: 8,
   },
   saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 16,
     borderRadius: 12,
     shadowOffset: { width: 0, height: 4 },
@@ -791,13 +914,13 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontWeight: "600",
+    color: "#FFFFFF",
     marginLeft: 8,
   },
   infoBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: 8,
     padding: 16,
     borderRadius: 12,
@@ -810,7 +933,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   footer: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingVertical: 24,
     marginTop: 8,
   },
@@ -826,8 +949,8 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   loadingText: {
     marginTop: 12,

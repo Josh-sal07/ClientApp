@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Alert,
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
@@ -23,6 +22,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "../../../theme/ThemeContext";
 import { useColorScheme } from "react-native";
 import { useUserStore } from "../../../store/user";
+import CustomAlert from "../../../components/CustomAlert";
 
 const { width, height } = Dimensions.get("window");
 
@@ -31,6 +31,13 @@ export default function ForgotMpinScreen() {
   const router = useRouter();
   const { mode, theme } = useTheme();
   const systemColorScheme = useColorScheme();
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    onConfirm: null,
+  });
 
   // Determine effective theme mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
@@ -178,142 +185,201 @@ export default function ForgotMpinScreen() {
   };
 
   // Step 1: Send OTP to verify phone
-const handleSendOtp = async () => {
-  try {
-    const phoneNormalized = normalizePhone(phone);
+  const handleSendOtp = async () => {
+    try {
+      const phoneNormalized = normalizePhone(phone);
 
-    if (phoneNormalized.length !== 10 || !phoneNormalized.startsWith("9")) {
-      Alert.alert("Error", "Invalid phone number");
-      return;
+      if (phoneNormalized.length !== 10 || !phoneNormalized.startsWith("9")) {
+        setAlertConfig({
+          visible: true,
+          title: "Invalid Phone",
+          message: "Invalid phone number",
+          type: "warning",
+        });
+        return;
+      }
+
+      if (!user?.branch?.subdomain) {
+        setAlertConfig({
+          visible: true,
+          title: "Service Unavailable",
+          message: "Service unavailable",
+          type: "error",
+        });
+        return;
+      }
+
+      setLoading(true);
+
+      const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/verify_number`;
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          mobile_number: phoneNormalized,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.status !== "success") {
+        throw new Error(data.message || "Failed to send OTP");
+      }
+
+      await AsyncStorage.setItem("reset_phone", phoneNormalized);
+
+      setAlertConfig({
+        visible: true,
+        title: "OTP Sent",
+        message: "Please check your phone",
+        type: "success",
+        onConfirm: () => setStep(2),
+      });
+    } catch (error) {
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: error.message,
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
     }
-
-    if (!user?.branch?.subdomain) {
-      Alert.alert("Error", "Service unavailable");
-      return;
-    }
-
-    setLoading(true);
-
-    const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/verify_number`;
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        mobile_number: phoneNormalized,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || data.status !== "success") {
-      throw new Error(data.message || "Failed to send OTP");
-    }
-
-    await AsyncStorage.setItem("reset_phone", phoneNormalized);
-
-    Alert.alert("OTP Sent", "Please check your phone", [
-      { text: "OK", onPress: () => setStep(2) },
-    ]);
-  } catch (error) {
-    Alert.alert("Error", error.message);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   // Step 2: Verify OTP
-const handleVerifyOtp = async () => {
-  try {
-    const otpCode = otp.join("");
+  const handleVerifyOtp = async () => {
+    console.log("VERIFY OTP CLICKED");
+    try {
+      const otpCode = otp.join("");
 
-    if (otpCode.length !== 6) {
-      Alert.alert("Error", "Enter the 6-digit OTP");
-      return;
+      if (otpCode.length !== 6) {
+        setAlertConfig({
+          visible: true,
+          title: "Invalid OTP",
+          message: "Enter the 6-digit OTP",
+          type: "warning",
+        });
+        return;
+      }
+
+      const storedPhone = await AsyncStorage.getItem("reset_phone");
+      if (!storedPhone) {
+        setAlertConfig({
+          visible: true,
+          title: "Session Expired",
+          message: "Session expired",
+          type: "error",
+        });
+        return;
+      }
+
+      if (!user?.branch?.subdomain) {
+        setAlertConfig({
+          visible: true,
+          title: "Service Unavailable",
+          message: "Service unavailable",
+          type: "error",
+        });
+        return;
+      }
+
+      setLoading(true);
+
+      const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/otp`;
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          mobile_number: storedPhone,
+          otp: otpCode,
+        }),
+      });
+
+      const data = await response.json();
+      console.log("OTP API RESPONSE:", data);
+
+      // ✅ THIS IS THE ONLY VALID SUCCESS CONDITION
+      if (!response.ok || data.status !== "verified") {
+        throw new Error("Invalid OTP");
+      }
+
+      // ✅ OTP VERIFIED
+      // OTP VERIFIED
+      setAlertConfig({
+        visible: true,
+        title: "OTP Verified",
+        message: "You can now set your new MPIN",
+        type: "success",
+        onConfirm: () => {
+          setOtp(["", "", "", "", "", ""]);
+          setStep(3);
+        },
+      });
+    } catch (error) {
+      setAlertConfig({
+        visible: true,
+        title: "Verification Failed",
+        message: error.message,
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
     }
-
-    const storedPhone = await AsyncStorage.getItem("reset_phone");
-    if (!storedPhone) {
-      Alert.alert("Error", "Session expired");
-      return;
-    }
-
-    if (!user?.branch?.subdomain) {
-      Alert.alert("Error", "Service unavailable");
-      return;
-    }
-
-    setLoading(true);
-
-    const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/otp`;
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        mobile_number: storedPhone,
-        otp: otpCode,
-      }),
-    });
-
-    const data = await response.json();
-
-    // ✅ THIS IS THE ONLY VALID SUCCESS CONDITION
-    if (!response.ok || data.status !== "verified") {
-      throw new Error("Invalid OTP");
-    }
-
-    // ✅ OTP VERIFIED
-    setOtp(["", "", "", "", "", ""]);
-    setStep(3);
-  } catch (error) {
-    Alert.alert("Error", error.message);
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   // Resend OTP
-const handleResendOtp = async () => {
-  try {
-    const storedPhone = await AsyncStorage.getItem("reset_phone");
-    if (!storedPhone) return;
+  const handleResendOtp = async () => {
+    try {
+      const storedPhone = await AsyncStorage.getItem("reset_phone");
+      if (!storedPhone) return;
 
-    if (!user?.branch?.subdomain) return;
+      if (!user?.branch?.subdomain) return;
 
-    setCanResend(false);
-    setResendTimer(30);
+      setCanResend(false);
+      setResendTimer(30);
 
-    const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/verify_number`;
+      const endpoint = `https://${user.branch.subdomain}.kazibufastnet.com/api/app/verify_number`;
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mobile_number: storedPhone,
-      }),
-    });
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mobile_number: storedPhone,
+        }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok || data.status !== "success") {
-      throw new Error("Failed to resend OTP");
+      if (!response.ok || data.status !== "success") {
+        throw new Error("Failed to resend OTP");
+      }
+
+      setAlertConfig({
+        visible: true,
+        title: "OTP Resent",
+        message: "Check your phone",
+        type: "success",
+      });
+    } catch (error) {
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: error.message,
+        type: "error",
+      });
+
+      setCanResend(true);
     }
-
-    Alert.alert("OTP Resent", "Check your phone");
-  } catch (error) {
-    Alert.alert("Error", error.message);
-    setCanResend(true);
-  }
-};
-
+  };
 
   // Step 3: Reset MPIN
   const handleResetMpin = async () => {
@@ -322,41 +388,66 @@ const handleResendOtp = async () => {
 
     // Validation
     if (pinString.length !== 6) {
-      Alert.alert("Error", "Please enter a 6-digit MPIN");
+      setAlertConfig({
+        visible: true,
+        title: "Invalid MPIN",
+        message: "Please enter a 6-digit MPIN",
+        type: "warning",
+      });
       return;
     }
 
     if (confirmPinString.length !== 6) {
-      Alert.alert("Error", "Please confirm your 6-digit MPIN");
+      setAlertConfig({
+        visible: true,
+        title: "Invalid MPIN",
+        message: "Please confirm your 6-digit MPIN",
+        type: "warning",
+      });
       return;
     }
 
     if (pinString !== confirmPinString) {
-      Alert.alert("Error", "MPINs do not match");
+      setAlertConfig({
+        visible: true,
+        title: "Mismatch",
+        message: "MPINs do not match",
+        type: "warning",
+      });
       return;
     }
 
     const storedPhone = await AsyncStorage.getItem("reset_phone");
     if (!storedPhone) {
-      Alert.alert("Error", "Session expired. Please start again.");
+      setAlertConfig({
+        visible: true,
+        title: "Session Expired",
+        message: "Session expired. Please start again.",
+        type: "error",
+      });
       return;
     }
 
     // Check if user exists
     if (!user) {
-      Alert.alert(
-        "Error",
-        "User information not available. Please log in again.",
-      );
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: "User information not available. Please log in again.",
+        type: "error",
+      });
       return;
     }
 
     // Check if branch and subdomain exist
     if (!user.branch || !user.branch.subdomain) {
-      Alert.alert(
-        "Error",
-        "Unable to determine your service domain. Please contact support.",
-      );
+      setAlertConfig({
+        visible: true,
+        title: "Service Error",
+        message:
+          "Unable to determine your service domain. Please contact support.",
+        type: "error",
+      });
       return;
     }
 
@@ -385,16 +476,22 @@ const handleResendOtp = async () => {
       await AsyncStorage.setItem("pin_set", "true");
       await AsyncStorage.setItem("temp_phone", storedPhone);
 
-      Alert.alert("Success", "MPIN reset successfully!", [
-        {
-          text: "Login Now",
-          onPress: () => {
-            router.replace("/(auth)/(login)/login");
-          },
+      setAlertConfig({
+        visible: true,
+        title: "Success",
+        message: "MPIN reset successfully!",
+        type: "success",
+        onConfirm: () => {
+          router.replace("/(auth)/(login)/login");
         },
-      ]);
+      });
     } catch (error) {
-      Alert.alert("Error", error.message || "Failed to reset MPIN");
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: error.message || "Failed to reset MPIN",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -928,6 +1025,20 @@ const handleResendOtp = async () => {
           {step === 3 && renderNewPinStep()}
 
           <View style={styles.bottomSpacer} />
+          <CustomAlert
+            visible={alertConfig.visible}
+            title={alertConfig.title}
+            message={alertConfig.message}
+            type={alertConfig.type}
+            confirmText="OK"
+            onConfirm={() => {
+              alertConfig.onConfirm?.();
+              setAlertConfig((prev) => ({ ...prev, visible: false }));
+            }}
+            onClose={() =>
+              setAlertConfig((prev) => ({ ...prev, visible: false }))
+            }
+          />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

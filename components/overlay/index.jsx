@@ -609,12 +609,15 @@ const formatTicketNumber = (ticketNum, backendId) => {
   // If we have a proper ticket number (not just ID), use it
   if (ticketNum && ticketNum.toString() !== backendId.toString()) {
     // Ensure it has proper formatting
-    if (!ticketNum.toString().includes('TKT-') && !ticketNum.toString().includes('#')) {
+    if (
+      !ticketNum.toString().includes("TKT-") &&
+      !ticketNum.toString().includes("#")
+    ) {
       return `TKT-${ticketNum}`;
     }
     return ticketNum.toString();
   }
-  
+
   // Fallback to formatted backend ID
   return `TKT-${backendId}`;
 };
@@ -691,7 +694,8 @@ const ChatBot = () => {
   const [isSubmittingTicket, setIsSubmittingTicket] = useState(false);
   const [subscriptions, setSubscriptions] = useState([]);
   const [selectedSubscription, setSelectedSubscription] = useState(null);
-  const [showSubscriptionDropdown, setShowSubscriptionDropdown] = useState(false);
+  const [showSubscriptionDropdown, setShowSubscriptionDropdown] =
+    useState(false);
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
 
   const flatListRef = useRef(null);
@@ -705,7 +709,7 @@ const ChatBot = () => {
     new Animated.ValueXY({
       x: SCREEN_WIDTH - BUTTON_SIZE - 20,
       y: SCREEN_HEIGHT - 200,
-    })
+    }),
   ).current;
 
   const panResponder = useRef(
@@ -725,9 +729,10 @@ const ChatBot = () => {
       onPanResponderRelease: (_, gesture) => {
         pan.flattenOffset();
         const middleX = SCREEN_WIDTH / 2;
-        const snapX = pan.x._value + BUTTON_SIZE / 2 < middleX
-          ? EDGE_PADDING
-          : SCREEN_WIDTH - BUTTON_SIZE - EDGE_PADDING;
+        const snapX =
+          pan.x._value + BUTTON_SIZE / 2 < middleX
+            ? EDGE_PADDING
+            : SCREEN_WIDTH - BUTTON_SIZE - EDGE_PADDING;
         let snapY = pan.y._value;
         if (snapY < MIN_Y) snapY = MIN_Y;
         if (snapY > MAX_Y) snapY = MAX_Y;
@@ -737,7 +742,7 @@ const ChatBot = () => {
           friction: 6,
         }).start();
       },
-    })
+    }),
   ).current;
 
   // Contact information
@@ -753,6 +758,7 @@ const ChatBot = () => {
     "Slow internet connection",
     "Can't access certain websites or apps",
     "How to change my Wi-Fi password?",
+    "App not working properly",
   ];
 
   // No internet connection follow-up questions
@@ -1122,7 +1128,7 @@ const ChatBot = () => {
       } else if (currentQuestion === "wifi_name_visible") {
         if (response) {
           botText =
-            "Great! Moving closer solved the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
+            "Great! Moving closer or restarting the modem solved the issue. If you experience any more problems, don't hesitate to reach out. Have a great day! 😊";
           setConversationContext(null);
           setShowContactInfo(false);
           setShowTicketPrompt(false);
@@ -1145,7 +1151,16 @@ const ChatBot = () => {
           setShowContactInfo(true);
           setShowTicketPrompt(true);
         }
-      }
+      }else if (currentQuestion === "wifi_signal_distance") {
+  if (response) {
+    botText =
+      "Try moving closer to the router. Walls, appliances, and thick concrete can weaken WiFi signal. You can also reposition your router to a central location.";
+  } else {
+    botText =
+      "Since you're near the router and still disconnecting, please try restarting your router. Also check if the LOS light is stable (not red).";
+  }
+}
+
 
       const botResponse = {
         id: Date.now().toString(),
@@ -1302,6 +1317,28 @@ const ChatBot = () => {
         };
     }
   };
+  const issueKeywords = {
+    disconnect: [
+      "disconnect",
+      "disconnecting",
+      "keeps dropping",
+      "unstable",
+      "cuts off",
+      "dropping",
+      "randomly off",
+    ],
+    slow: ["slow", "lag", "buffer", "delay", "high ping", "latency"],
+    password: [
+      "password",
+      "wifi password",
+      "change password",
+      "forgot password",
+    ],
+  };
+
+  const hasKeyword = (text, keywords) => {
+    return keywords.some((word) => text.includes(word));
+  };
 
   // Send regular message
   const sendMessage = async (text = inputText.trim()) => {
@@ -1325,9 +1362,80 @@ const ChatBot = () => {
     setIsTyping(true);
 
     setTimeout(() => {
+      const lowerText = text.toLowerCase();
+
+      let botText = "";
+      let newContext = null;
+
+      if (lowerText.includes("slow")) {
+        botText =
+          "I understand you're experiencing slow internet. Have you tried restarting your modem and router?";
+        newContext = "slow_internet";
+      } else if (
+        lowerText.includes("no internet") ||
+        lowerText.includes("can't connect") ||
+        lowerText.includes("cannot connect")
+      ) {
+        const botResponse = {
+          id: Date.now().toString(),
+          text: "I understand you have no internet connection. Let's try to diagnose the issue. Please check:",
+          sender: "bot",
+          timestamp: new Date(),
+          quickReplies: noInternetFollowUp,
+        };
+
+        const finalMessages = [...updatedMessages, botResponse];
+        setMessages(finalMessages);
+        saveMessages(finalMessages);
+        setIsTyping(false);
+        return;
+      } else if (lowerText.includes("los")) {
+        const botResponse = {
+          id: Date.now().toString(),
+          text: "A red LOS light means there is a fiber signal loss. Is the LOS light blinking or steady red?",
+          sender: "bot",
+          timestamp: new Date(),
+        };
+
+        const finalMessages = [...updatedMessages, botResponse];
+        setMessages(finalMessages);
+        saveMessages(finalMessages);
+        setIsTyping(false);
+
+        setCurrentQuestion("red_light");
+        setShowYesNoQuestion(true);
+
+        return;
+      } else if (hasKeyword(lowerText, issueKeywords.disconnect)) {
+        const botResponse = {
+          id: Date.now().toString(),
+          text: "Frequent disconnections are usually caused by:\n\n• Weak WiFi signal\n• Router overheating\n• Too many connected devices\n• Fiber signal instability\n\nAre you far from the router?",
+          sender: "bot",
+          timestamp: new Date(),
+        };
+
+        const finalMessages = [...updatedMessages, botResponse];
+        setMessages(finalMessages);
+        saveMessages(finalMessages);
+        setIsTyping(false);
+
+        setCurrentQuestion("wifi_signal_distance");
+        setShowYesNoQuestion(true);
+        return;
+      } else if (lowerText.includes("password")) {
+        botText =
+          "To change your Wi-Fi password, you need to log in to your router admin page (usually 192.168.1.1). Would you like step-by-step instructions?";
+        newContext = "change_password";
+      } else {
+        botText =
+          "I understand your concern. Let me help you troubleshoot. Can you tell me if this issue affects all devices or only one device?";
+      }
+
+      setConversationContext(newContext);
+
       const botResponse = {
         id: Date.now().toString(),
-        text: "Thanks for the information. How else can I assist you?",
+        text: botText,
         sender: "bot",
         timestamp: new Date(),
       };
@@ -1488,15 +1596,20 @@ const ChatBot = () => {
 
       // Extract IDs from ticketData
       if (ticketData) {
-        backendId = ticketData.id || ticketData.ticket_id || ticketData.ticketId;
-        ticketNumber = ticketData.ticket_number || ticketData.ticketNumber || 
-                      ticketData.ticket_no || ticketData.reference_number;
+        backendId =
+          ticketData.id || ticketData.ticket_id || ticketData.ticketId;
+        ticketNumber =
+          ticketData.ticket_number ||
+          ticketData.ticketNumber ||
+          ticketData.ticket_no ||
+          ticketData.reference_number;
       }
 
       // If still no ID, try direct response keys
       if (!backendId) {
         backendId = apiResponseData.id || apiResponseData.ticket_id;
-        ticketNumber = apiResponseData.ticket_number || apiResponseData.ticketNumber;
+        ticketNumber =
+          apiResponseData.ticket_number || apiResponseData.ticketNumber;
       }
 
       console.log(

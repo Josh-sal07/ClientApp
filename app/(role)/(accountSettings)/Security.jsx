@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
-  Alert,
   Dimensions,
   Platform,
   Switch,
@@ -23,6 +22,7 @@ import { useTheme } from "../../../theme/ThemeContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
+import CustomAlert from "../../../components/CustomAlert";
 
 const { width, height } = Dimensions.get("window");
 
@@ -33,6 +33,15 @@ const Security = () => {
   const systemColorScheme = useColorScheme();
   // Determine effective mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode; // theme is already an object with colors!
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    confirmText: "OK",
+    cancelText: null,
+    onConfirm: null,
+  });
 
   // Define colors based on theme
   const COLORS = {
@@ -138,8 +147,7 @@ const Security = () => {
           }
 
           setEmailAlertsEnabled(Boolean(emailData.enabled));
-        } catch (err) {
-        }
+        } catch (err) {}
       };
 
       loadAlertsSettings();
@@ -173,43 +181,15 @@ const Security = () => {
   );
 
   const handleResetPin = () => {
-    Alert.alert("Reset MPIN", "Do you want to change your MPIN?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Reset",
-        onPress: () => router.push("/(auth)/(setup-newmpin)/newmpin"),
-      },
-    ]);
-  };
-
-  const handleClearCache = () => {
-    Alert.alert("Clear Cache", "Clear all cached data?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Clear",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await AsyncStorage.clear();
-            Alert.alert("Success", "Cache cleared successfully");
-          } catch (error) {
-            Alert.alert("Error", "Failed to clear cache");
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleSessionLogout = () => {
-    Alert.alert("Logout All Sessions", "Logout from all other devices?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: () =>
-          Alert.alert("Success", "Logged out from all other devices"),
-      },
-    ]);
+    setAlertConfig({
+      visible: true,
+      title: "Reset MPIN",
+      message: "Do you want to change your MPIN?",
+      type: "warning",
+      confirmText: "Reset",
+      cancelText: "Cancel",
+      onConfirm: () => router.push("/(auth)/(setup-newmpin)/newmpin"),
+    });
   };
 
   const toggleSmsAlerts = async (value) => {
@@ -219,20 +199,18 @@ const Security = () => {
       return;
     }
 
-    Alert.alert(
-      "Enable SMS Notifications",
-      "Do you want to receive account notifications via SMS?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Enable",
-          onPress: async () => {
-            setSmsAlertsEnabled(true);
-            await updateSmsBackend(true);
-          },
-        },
-      ],
-    );
+    setAlertConfig({
+      visible: true,
+      title: "Enable SMS Notifications",
+      message: "Do you want to receive account notifications via SMS?",
+      type: "info",
+      confirmText: "Enable",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        setSmsAlertsEnabled(true);
+        await updateSmsBackend(true);
+      },
+    });
   };
 
   const updateSmsBackend = async (enabled) => {
@@ -251,8 +229,7 @@ const Security = () => {
         },
         body: JSON.stringify({ enabled }),
       });
-    } catch (err) {
-    }
+    } catch (err) {}
   };
 
   const securityItems = [
@@ -279,49 +256,55 @@ const Security = () => {
           return;
         }
 
-        Alert.alert(
-          "Enable Biometric Login",
-          "Do you want to enable biometric authentication for faster and secure login?",
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Enable",
-              onPress: async () => {
-                const hasHardware =
-                  await LocalAuthentication.hasHardwareAsync();
-                const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        setAlertConfig({
+          visible: true,
+          title: "Enable Biometric Login",
+          message: "Do you want to enable biometric authentication?",
+          type: "info",
+          confirmText: "Enable",
+          cancelText: "Cancel",
+          onConfirm: async () => {
+            const hasHardware = await LocalAuthentication.hasHardwareAsync();
+            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
-                if (!hasHardware) {
-                  Alert.alert(
-                    "Unavailable",
-                    "Biometric hardware not supported",
-                  );
-                  return;
-                }
+            if (!hasHardware) {
+              setAlertConfig({
+                visible: true,
+                title: "Unavailable",
+                message: "Biometric hardware not supported",
+                type: "error",
+              });
+              return;
+            }
 
-                if (!isEnrolled) {
-                  Alert.alert(
-                    "Not Set Up",
-                    "Please set up biometrics on your device",
-                  );
-                  return;
-                }
+            if (!isEnrolled) {
+              setAlertConfig({
+                visible: true,
+                title: "Not Set Up",
+                message: "Please set up biometrics on your device",
+                type: "warning",
+              });
+              return;
+            }
 
-                const result = await LocalAuthentication.authenticateAsync({
-                  promptMessage: "Confirm Biometrics",
-                  fallbackLabel: "Use MPIN",
-                });
+            const result = await LocalAuthentication.authenticateAsync({
+              promptMessage: "Confirm Biometrics",
+              fallbackLabel: "Use MPIN",
+            });
 
-                if (result.success) {
-                  await AsyncStorage.setItem("biometric_enabled", "true");
-                  setBiometricEnabled(true);
-                } else {
-                  Alert.alert("Failed", "Biometric authentication failed");
-                }
-              },
-            },
-          ],
-        );
+            if (result.success) {
+              await AsyncStorage.setItem("biometric_enabled", "true");
+              setBiometricEnabled(true);
+            } else {
+              setAlertConfig({
+                visible: true,
+                title: "Failed",
+                message: "Biometric authentication failed",
+                type: "error",
+              });
+            }
+          },
+        });
       },
       type: "toggle",
     },
@@ -554,6 +537,19 @@ const Security = () => {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        confirmText={alertConfig.confirmText}
+        cancelText={alertConfig.cancelText}
+        onConfirm={() => {
+          alertConfig.onConfirm?.();
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+        }}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 };

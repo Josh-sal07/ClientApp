@@ -24,6 +24,13 @@ export const useLoginLogic = () => {
   const [isLocked, setIsLocked] = useState(false);
   const [lockTimer, setLockTimer] = useState(30); // countdown in seconds
   const [showMpin, setShowMpin] = useState(true);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    onConfirm: null,
+  });
 
   useEffect(() => {
     const tryBiometricLogin = async () => {
@@ -73,8 +80,7 @@ export const useLoginLogic = () => {
         }
 
         handleLogin(savedPin);
-      } catch (err) {
-      }
+      } catch (err) {}
     };
 
     tryBiometricLogin();
@@ -109,8 +115,7 @@ export const useLoginLogic = () => {
         if (storedPhone) {
           setPhoneNumber(storedPhone);
         }
-      } catch (error) {
-      }
+      } catch (error) {}
     };
 
     loadPhoneNumber();
@@ -152,8 +157,15 @@ export const useLoginLogic = () => {
         const phone = phoneNumber || (await AsyncStorage.getItem("phone"));
 
         if (!phone) {
-          Alert.alert("Error", "Phone number not found. Please verify again.");
-          router.replace("/(auth)/(phone-verify)/phone-verify");
+          setAlertConfig({
+            visible: true,
+            title: "Error",
+            message: "Phone number not found. Please verify again.",
+            type: "error",
+            onConfirm: () => {
+              router.replace("/(auth)/(phone-verify)/phone-verify");
+            },
+          });
           return;
         }
 
@@ -262,30 +274,27 @@ export const useLoginLogic = () => {
   );
 
   const handleForgotMpin = useCallback(() => {
-    Alert.alert("Forgot MPIN?", "Are you sure you want to reset your MPIN?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        onPress: () => {
-          router.push("/(auth)/(forgot-mpin)/forgotmpin");
-        },
+    setAlertConfig({
+      visible: true,
+      title: "Forgot MPIN?",
+      message: "Are you sure you want to reset your MPIN?",
+      type: "warning",
+      onConfirm: () => {
+        router.push("/(auth)/(forgot-mpin)/forgotmpin");
       },
-    ]);
+    });
   }, []);
 
   const handleChangeNumber = useCallback(() => {
-    Alert.alert(
-      "Change Number",
-      "Do you want to use a different phone number?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes",
-          onPress: () => {
-            router.replace("/(auth)/(phone-verify)/phone-verify");
-          },
-        },
-      ],
-    );
+    setAlertConfig({
+      visible: true,
+      title: "Change Number",
+      message: "Do you want to use a different phone number?",
+      type: "info",
+      onConfirm: () => {
+        router.replace("/(auth)/(phone-verify)/phone-verify");
+      },
+    });
   }, [router]);
 
   return {
@@ -302,6 +311,8 @@ export const useLoginLogic = () => {
     handleForgotMpin,
     handleChangeNumber,
     resetMpin,
+    alertConfig,
+    setAlertConfig,
   };
 };
 

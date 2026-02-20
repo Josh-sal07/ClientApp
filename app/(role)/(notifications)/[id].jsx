@@ -3,7 +3,6 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   StyleSheet,
   StatusBar,
   ScrollView,
@@ -15,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { useTheme } from "../../../theme/ThemeContext";
 import { useUserStore } from "../../../store/user";
+import CustomAlert from "../../../components/CustomAlert";
 
 export default function NotificationDetail() {
   const { id } = useLocalSearchParams();
@@ -22,6 +22,15 @@ export default function NotificationDetail() {
   const { mode } = useTheme();
   const systemColorScheme = useColorScheme();
   const user = useUserStore((state) => state.user);
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    confirmText: "OK",
+    cancelText: null,
+    onConfirm: null,
+  });
 
   // Determine effective mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
@@ -77,6 +86,79 @@ export default function NotificationDetail() {
   useEffect(() => {
     loadNotification();
   }, []);
+
+  const handleDelete = async () => {
+    try {
+      setIsDeleting(true);
+
+      const token = await AsyncStorage.getItem("token");
+      if (!token) {
+        setAlertConfig({
+          visible: true,
+          title: "Session Expired",
+          message: "Please login again.",
+          type: "error",
+          confirmText: "Login",
+          onConfirm: async () => {
+            await AsyncStorage.removeItem("token");
+            router.replace("/(auth)/(login)/login");
+          },
+        });
+        return;
+      }
+
+      if (!user?.branch?.subdomain) {
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: "User information not available.",
+          type: "error",
+        });
+        return;
+      }
+
+      const subdomain = user.branch.subdomain;
+
+      const res = await fetch(
+        `https://${subdomain}.kazibufastnet.com/api/app/notifications/delete`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            selected: [id],
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to delete notification");
+      }
+
+      setAlertConfig({
+        visible: true,
+        title: "Deleted",
+        message: "Notification removed successfully.",
+        type: "success",
+        confirmText: "OK",
+        onConfirm: () => {
+          router.back();
+        },
+      });
+    } catch (error) {
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: "Failed to delete notification.",
+        type: "error",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // 📥 LOAD SINGLE NOTIFICATION
   const loadNotification = async () => {
@@ -147,64 +229,17 @@ export default function NotificationDetail() {
 
   // 🗑️ DELETE (FRONTEND ONLY)
   const deleteNotification = () => {
-    Alert.alert(
-      "Delete Notification",
-      "Are you sure you want to delete this notification?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            setIsDeleting(true);
-            try {
-              const token = await AsyncStorage.getItem("token");
-              if (!token) {
-                Alert.alert("Session Expired", "Please login again");
-                router.replace("/(auth)/(login)/login");
-                return;
-              }
-
-              // ✅ Check for user data
-              if (!user || !user.branch) {
-                Alert.alert("Error", "User information not available");
-                return;
-              }
-
-              const subdomain = user.branch.subdomain;
-
-              const res = await fetch(
-                `https://${subdomain}.kazibufastnet.com/api/app/notifications/delete`,
-                {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: "application/json",
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    selected: [id],
-                  }),
-                },
-              );
-
-              if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text);
-              }
-
-              Alert.alert("Deleted", "Notification removed");
-              router.back();
-            } catch (error) {
-              console.error("Delete notification error:", error);
-              Alert.alert("Error", "Failed to delete notification");
-            } finally {
-              setIsDeleting(false);
-            }
-          },
-        },
-      ],
-    );
+    setAlertConfig({
+      visible: true,
+      title: "Delete Notification",
+      message: "Are you sure you want to delete this notification?",
+      type: "warning",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        await handleDelete();
+      },
+    });
   };
 
   // ✅ Add useEffect to log user state for debugging
@@ -245,10 +280,17 @@ export default function NotificationDetail() {
       // Check if it's a full URL or a route path
       if (notification.action_url.startsWith("http")) {
         // Open external URL
-        Alert.alert("External Link", "This will open in your browser", [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open", onPress: () => router.push(notification.action_url) },
-        ]);
+        setAlertConfig({
+          visible: true,
+          title: "Open External Link",
+          message: "This will open in your browser.",
+          type: "info",
+          confirmText: "Open",
+          cancelText: "Cancel",
+          onConfirm: () => {
+            router.push(notification.action_url);
+          },
+        });
       } else {
         // Navigate to internal route
         router.push(notification.action_url);
@@ -441,6 +483,21 @@ export default function NotificationDetail() {
         {/* BOTTOM PADDING */}
         <View style={styles.bottomPadding} />
       </ScrollView>
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        confirmText={alertConfig.confirmText}
+        cancelText={alertConfig.cancelText}
+        onConfirm={() => {
+          alertConfig.onConfirm?.();
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+        }}
+        onClose={() => {
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+        }}
+      />
     </View>
   );
 }

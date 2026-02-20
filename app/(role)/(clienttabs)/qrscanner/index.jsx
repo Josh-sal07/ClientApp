@@ -1,33 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
   View,
   Text,
   TouchableOpacity,
-  Alert,
   Vibration,
   StatusBar,
   Dimensions,
-} from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import CustomAlert from "../../../../components/CustomAlert";
 
-const { width, height } = Dimensions.get('window');
-
-const goBackSafe = () => {
-  if (router.canGoBack()) {
-    router.back();
-  } else {
-    router.replace("/(role)/(clienttabs)/home"); // 👈 change to your home/dashboard route
-  }
-};
-
+const { width, height } = Dimensions.get("window");
 
 const COLORS = {
-  primary: "#21C7B9",       // Teal from "KAZIBU FAST"
-  secondary: "#00AFA1",     // Darker teal
+  primary: "#21C7B9", // Teal from "KAZIBU FAST"
+  secondary: "#00AFA1", // Darker teal
   white: "#FFFFFF",
   dark: "#1b2e2c",
   black: "#000000",
@@ -38,6 +29,23 @@ export default function QRScannerScreen() {
   const [scanned, setScanned] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const router = useRouter();
+
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    confirmText: "OK",
+    cancelText: null,
+    onConfirm: null,
+  });
+  const goBackSafe = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(role)/(clienttabs)/home");
+    }
+  };
 
   useEffect(() => {
     if (!permission) {
@@ -62,9 +70,14 @@ export default function QRScannerScreen() {
           <Text style={styles.permissionText}>
             Please allow camera access to scan QR codes
           </Text>
-          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={requestPermission}
+          >
             <Ionicons name="camera" size={20} color={COLORS.white} />
-            <Text style={styles.permissionButtonText}>Grant Camera Permission</Text>
+            <Text style={styles.permissionButtonText}>
+              Grant Camera Permission
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -74,24 +87,17 @@ export default function QRScannerScreen() {
   const handleBarCodeScanned = ({ type, data }) => {
     if (!scanned) {
       setScanned(true);
-      Vibration.vibrate();
-      
-      Alert.alert(
-        "QR Code Scanned",
-        `Type: ${type}\nData: ${data}`,
-        [
-          {
-            text: "Scan Again",
-            onPress: () => setScanned(false),
-            style: "default",
-          },
-          {
-            text: "Go Back",
-            onPress: goBackSafe,
-            style: "cancel",
-          },
-        ]
-      );
+      Vibration.vibrate(100);
+
+      setAlertConfig({
+        visible: true,
+        title: "QR Code Scanned",
+        message: `Type: ${type}\n\nData: ${data}`,
+        type: "success",
+        confirmText: "Scan Again",
+        cancelText: "Go Back",
+        onConfirm: () => setScanned(false),
+      });
     }
   };
 
@@ -104,43 +110,31 @@ export default function QRScannerScreen() {
   };
 
   const handleManualInput = () => {
-    Alert.prompt(
-      "Manual QR Code Input",
-      "Enter the QR code data:",
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Submit",
-          onPress: (data) => {
-            if (data) {
-              Alert.alert("Manual Entry", `Data entered: ${data}`);
-            }
-          }
-        }
-      ]
-    );
+    setAlertConfig({
+      visible: true,
+      title: "Manual Input",
+      message: "Manual QR entry feature coming soon.",
+      type: "info",
+    });
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.black} />
-      
+
       <CameraView
         style={StyleSheet.absoluteFillObject}
         facing="back"
         barcodeScannerSettings={{
           barcodeTypes: [
-            'qr',
-            'pdf417',
-            'code128',
-            'code39',
-            'ean13',
-            'ean8',
-            'upc_a',
-            'upc_e',
+            "qr",
+            "pdf417",
+            "code128",
+            "code39",
+            "ean13",
+            "ean8",
+            "upc_a",
+            "upc_e",
           ],
         }}
         onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
@@ -185,7 +179,7 @@ export default function QRScannerScreen() {
           </Text>
 
           {scanned && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.scanAgainButton}
               onPress={() => setScanned(false)}
             >
@@ -194,6 +188,23 @@ export default function QRScannerScreen() {
           )}
         </View>
       </View>
+      <CustomAlert
+  visible={alertConfig.visible}
+  title={alertConfig.title}
+  message={alertConfig.message}
+  type={alertConfig.type}
+  confirmText={alertConfig.confirmText}
+  cancelText={alertConfig.cancelText}
+  onConfirm={() => {
+    alertConfig.onConfirm?.();
+    setAlertConfig(prev => ({ ...prev, visible: false }));
+  }}
+  onClose={() => {
+    goBackSafe();
+    setAlertConfig(prev => ({ ...prev, visible: false }));
+  }}
+/>
+
     </SafeAreaView>
   );
 }
@@ -206,43 +217,43 @@ const styles = StyleSheet.create({
   loadingText: {
     color: COLORS.white,
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 50,
   },
   permissionContainer: {
     flex: 1,
     backgroundColor: COLORS.black,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
   permissionCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 20,
     padding: 30,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
     borderColor: `${COLORS.primary}30`,
-    width: '100%',
+    width: "100%",
   },
   permissionTitle: {
     color: COLORS.white,
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: "700",
     marginTop: 20,
     marginBottom: 10,
   },
   permissionText: {
     color: COLORS.white,
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 30,
     opacity: 0.8,
     lineHeight: 22,
   },
   permissionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: COLORS.primary,
     paddingHorizontal: 25,
     paddingVertical: 15,
@@ -252,16 +263,16 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     color: COLORS.white,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
   },
   topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 30,
@@ -270,41 +281,41 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: `${COLORS.primary}30`,
   },
   title: {
     color: COLORS.white,
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   torchButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: `${COLORS.primary}30`,
   },
   scanFrameContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   scanFrame: {
     width: width * 0.7,
     height: width * 0.7,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     borderWidth: 2,
     borderColor: COLORS.primary,
   },
   corner: {
-    position: 'absolute',
+    position: "absolute",
     width: 25,
     height: 25,
     borderColor: COLORS.primary,
@@ -339,19 +350,19 @@ const styles = StyleSheet.create({
   },
   bottomControls: {
     padding: 30,
-    alignItems: 'center',
+    alignItems: "center",
   },
   instruction: {
     color: COLORS.white,
     fontSize: 16,
     marginBottom: 20,
-    textAlign: 'center',
+    textAlign: "center",
     opacity: 0.9,
   },
   manualButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(33, 199, 185, 0.15)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(33, 199, 185, 0.15)",
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 25,
@@ -362,7 +373,7 @@ const styles = StyleSheet.create({
   manualButtonText: {
     color: COLORS.primary,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     marginLeft: 10,
   },
   scanAgainButton: {
@@ -379,6 +390,6 @@ const styles = StyleSheet.create({
   scanAgainText: {
     color: COLORS.white,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });

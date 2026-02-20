@@ -1,4 +1,13 @@
-import { StyleSheet } from "react-native";
+import { StyleSheet, Dimensions } from "react-native";
+
+const { width } = Dimensions.get("window");
+
+const scaleSize = (size) => {
+  const baseWidth = 375;
+  const scale = width / baseWidth;
+  return Math.round(size * Math.min(scale, 1.3));
+};
+
 const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
@@ -7,135 +16,117 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
-    backgroundColor: "#0C1824",
+    padding: scaleSize(20),
     minHeight: "100%",
   },
   backButton: {
     alignSelf: "flex-start",
-    padding: 8,
-    bottom: 120,
+    padding: scaleSize(8),
+    bottom: scaleSize(120),
   },
   backButtonText: {
-    color: "#00afa1ff",
-    fontSize: 26,
+    fontSize: scaleSize(26),
     fontWeight: "900",
   },
   logoContainer: {
     alignItems: "center",
-    marginBottom: 60,
+    marginBottom: scaleSize(60),
   },
   logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 10,
+    width: scaleSize(120),
+    height: scaleSize(120),
+    marginBottom: scaleSize(10),
   },
   appName: {
-    fontSize: 24,
+    fontSize: scaleSize(24),
     fontWeight: "700",
-    color: "#000000ff",
   },
   title: {
-    fontSize: 32,
+    fontSize: scaleSize(32),
     fontWeight: "700",
-    marginBottom: 8,
-    color: "#ffffffff",
+    marginBottom: scaleSize(8),
     textAlign: "center",
   },
   subtitle: {
-    fontSize: 16,
-    color: "#ebebebff",
-    marginBottom: 40,
+    fontSize: scaleSize(16),
+    marginBottom: scaleSize(40),
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: scaleSize(22),
   },
   phoneNumberText: {
     fontWeight: "600",
-    color: "#ecececff",
   },
   formContainer: {
     width: "100%",
     maxWidth: 400,
   },
   inputContainer: {
-    marginBottom: 30,
+    marginBottom: scaleSize(30),
   },
   label: {
-    fontSize: 14,
+    fontSize: scaleSize(14),
     fontWeight: "600",
-    marginBottom: 12,
-    color: "#e6e6e6ff",
+    marginBottom: scaleSize(12),
   },
   phoneInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    borderColor: "#ddd",
     borderWidth: 1,
     borderRadius: 12,
-    backgroundColor: "#f9f9f9",
     overflow: "hidden",
   },
   countryCodeBox: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: "#f0f0f0",
+    paddingHorizontal: scaleSize(16),
+    paddingVertical: scaleSize(14),
   },
   countryCodeText: {
-    fontSize: 16,
+    fontSize: scaleSize(16),
     fontWeight: "600",
-    color: "#333",
   },
   separator: {
     width: 1,
-    height: 30,
-    backgroundColor: "#ddd",
+    height: scaleSize(30),
   },
   phoneInput: {
     flex: 1,
-    height: 50,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    color: "#333",
+    height: scaleSize(50),
+    paddingHorizontal: scaleSize(16),
+    fontSize: scaleSize(16),
   },
   exampleText: {
-    fontSize: 12,
-    color: "#e2e2e2ff",
+    fontSize: scaleSize(12),
     fontStyle: "italic",
-    marginLeft: 4,
-    marginTop: 8,
+    marginLeft: scaleSize(4),
+    marginTop: scaleSize(8),
   },
   otpContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: scaleSize(20),
     width: "100%",
     maxWidth: 400,
+    gap: scaleSize(8),
   },
   otpInput: {
-    width: 50,
-    height: 50,
-    borderColor: "#ddd",
+    flex: 1,
+    height: scaleSize(50),
     borderWidth: 1,
     borderRadius: 12,
-    fontSize: 20,
-    backgroundColor: "#f9f9f9",
+    fontSize: scaleSize(20),
     textAlign: "center",
+    marginHorizontal: scaleSize(2),
   },
   otpInputFilled: {
-    borderColor: "#00afa1ff",
-    backgroundColor: "#fff",
+    // Border color will be applied dynamically
   },
   demoContainer: {
-    marginBottom: 20,
-    padding: 10,
-    backgroundColor: "#f0f8ff",
+    marginBottom: scaleSize(20),
+    padding: scaleSize(10),
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#00afa1ff",
   },
   demoText: {
-    fontSize: 14,
-    color: "#00afa1ff",
+    fontSize: scaleSize(14),
     textAlign: "center",
     fontStyle: "italic",
   },
@@ -143,29 +134,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: scaleSize(30),
   },
   resendText: {
-    color: "#e9e9e9ff",
-    fontSize: 14,
+    fontSize: scaleSize(14),
   },
   resendLink: {
-    color: "#00afa1ff",
-    fontSize: 14,
+    fontSize: scaleSize(14),
     fontWeight: "600",
   },
   resendLinkDisabled: {
-    color: "#999",
+    // Color will be applied dynamically
   },
   button: {
     width: "100%",
-    backgroundColor: "#30BCBB",
-    paddingVertical: 16,
+    paddingVertical: scaleSize(16),
     borderRadius: 12,
     alignItems: "center",
-    marginTop: 15,
-    marginBottom: 10,
-    shadowColor: "#00afa1ff",
+    marginTop: scaleSize(15),
+    marginBottom: scaleSize(10),
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -175,30 +163,29 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   buttonText: {
-    color: "#ffffffff",
-    fontSize: 18,
+    color: "#ffffff",
+    fontSize: scaleSize(18),
     fontWeight: "600",
   },
   signInContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 10,
+    paddingHorizontal: scaleSize(10),
   },
   signInText: {
-    color: "#e4e3e3ff",
-    fontSize: 14,
+    fontSize: scaleSize(14),
   },
   signInButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
+    paddingVertical: scaleSize(4),
+    paddingHorizontal: scaleSize(12),
     borderRadius: 6,
   },
   signInButtonText: {
-    color: "#00afa1ff",
-    fontSize: 14,
+    fontSize: scaleSize(14),
     fontWeight: "600",
     textDecorationLine: "underline",
   },
 });
+
 export default styles;

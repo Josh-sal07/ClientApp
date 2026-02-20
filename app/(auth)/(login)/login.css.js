@@ -11,13 +11,11 @@ const scaleSize = (size) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#0C1824",
   },
   container: {
     flex: 1,
-    backgroundColor: "#0b1515",
+    backgroundColor: "transparent",
   },
-
   logoContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -31,7 +29,6 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontWeight: "700",
-    color: "#00afa1ff",
     letterSpacing: scaleSize(1),
   },
   phoneSection: {
@@ -41,7 +38,6 @@ const styles = StyleSheet.create({
   },
   phoneNumber: {
     fontWeight: "600",
-    color: "#f1f1f1ff",
     marginRight: scaleSize(10),
   },
   mpinContainer: {
@@ -50,7 +46,6 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   securityWarning: {
-    color: "#e9e9e9ff",
     textAlign: "center",
     lineHeight: scaleSize(20),
     maxWidth: "90%",
@@ -69,17 +64,14 @@ const styles = StyleSheet.create({
   },
   mpinDot: {
     borderWidth: 2,
-    borderColor: "#ddd",
-    backgroundColor: "#0C1824",
     justifyContent: "center",
     alignItems: "center",
   },
   mpinDotFilled: {
-    backgroundColor: "#00AFA1",
-    borderColor: "#00AFA1",
+    // Colors will be applied dynamically
   },
   mpinDotInner: {
-    backgroundColor: "#fff",
+    // Colors will be applied dynamically
   },
   keypadWrapper: {
     flex: 1,
@@ -101,7 +93,6 @@ const styles = StyleSheet.create({
     maxWidth: 300,
   },
   keypadKey: {
-    backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -114,18 +105,15 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   keypadKeyText: {
-    color: "#333",
     fontWeight: "600",
   },
   keypadKeyTextBackspace: {
-    color: "#666",
     fontWeight: "600",
   },
   keypadKeyBackspace: {
-    backgroundColor: "#f5f5f5",
+    // Background will be applied dynamically
   },
   keypadKeyDisabled: {
-    backgroundColor: "#f0f0f0",
     opacity: 0.6,
   },
   keypadKeyTextDisabled: {
@@ -141,11 +129,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: scaleSize(20),
   },
   forgotMpinText: {
-    color: "#00AFA1",
     fontWeight: "500",
   },
   disabledText: {
-    color: "#666",
     opacity: 0.6,
   },
   shakeAnimation: {
@@ -167,7 +153,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(12, 24, 36, 0.8)",
     borderRadius: 10,
     zIndex: 10,
   },
@@ -181,18 +166,15 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: "#00AFA1",
     marginHorizontal: 8,
     opacity: 0.6,
   },
   skeletonLoadingText: {
-    color: "#00AFA1",
     fontSize: 16,
     fontWeight: "500",
     marginTop: 10,
   },
   skeletonDot: {
-    backgroundColor: "#ddd",
     opacity: 0.6,
   },
   verifyingOverlay: {
@@ -201,13 +183,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
     zIndex: 10,
   },
   verifyingText: {
-    color: "#fff",
     fontSize: 18,
     marginTop: 15,
     fontWeight: "600",

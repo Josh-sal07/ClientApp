@@ -1,4 +1,12 @@
-import { StyleSheet } from "react-native";
+import { StyleSheet, Dimensions } from "react-native";
+
+const { width } = Dimensions.get("window");
+
+const scaleSize = (size) => {
+  const baseWidth = 375;
+  const scale = width / baseWidth;
+  return Math.round(size * Math.min(scale, 1.3));
+};
 
 export default StyleSheet.create({
   scroll: {
@@ -6,57 +14,49 @@ export default StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#0C1824",
     alignItems: "center",
     justifyContent: "center",
-    padding: 20,
+    padding: scaleSize(20),
   },
   logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 20,
+    width: scaleSize(120),
+    height: scaleSize(120),
+    marginBottom: scaleSize(20),
   },
   title: {
-    fontSize: 28,
+    fontSize: scaleSize(28),
     fontWeight: "700",
-    color: "#fff",
-    marginBottom: 20,
+    marginBottom: scaleSize(20),
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f9f9f9",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#ddd",
     overflow: "hidden",
     width: "100%",
     maxWidth: 400,
   },
   countryCode: {
-    paddingHorizontal: 16,
-    fontSize: 16,
+    paddingHorizontal: scaleSize(16),
+    fontSize: scaleSize(16),
     fontWeight: "600",
-    color: "#333",
   },
   input: {
     flex: 1,
-    height: 50,
-    paddingHorizontal: 12,
-    fontSize: 16,
-    color: "#333",
+    height: scaleSize(50),
+    paddingHorizontal: scaleSize(12),
+    fontSize: scaleSize(16),
   },
   helper: {
-    fontSize: 12,
-    color: "#dcdcdc",
-    marginTop: 8,
-    marginBottom: 20,
+    fontSize: scaleSize(12),
+    marginTop: scaleSize(8),
+    marginBottom: scaleSize(20),
   },
   button: {
-    backgroundColor: "#30BCBB",
     width: "100%",
     maxWidth: 400,
-    paddingVertical: 16,
+    paddingVertical: scaleSize(16),
     borderRadius: 12,
     alignItems: "center",
   },
@@ -65,20 +65,18 @@ export default StyleSheet.create({
   },
   buttonText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: scaleSize(16),
     fontWeight: "600",
-  },
-  signInButtonText: {
-    color: "#c5d1d1ff",
-    fontWeight: "600",  
   },
   signInContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 20,
+    marginTop: scaleSize(20),
   },
   signInText: {
-    color: "#a69d9dff",
-    marginRight: 8,
+    marginRight: scaleSize(8),
+  },
+  signInLink: {
+    fontWeight: "600",
   },
 });

@@ -5,7 +5,6 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -20,11 +19,12 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../../theme/ThemeContext";
 import { useUserStore } from "../../../store/user";
+import CustomAlert from "../../../components/CustomAlert";
 
 const { width } = Dimensions.get("window");
 
 export default function ChangeMPINPage() {
-   const user = useUserStore((state) => state.user);
+  const user = useUserStore((state) => state.user);
   const router = useRouter();
   const { mode } = useTheme();
   const [pin, setPin] = useState("");
@@ -37,6 +37,13 @@ export default function ChangeMPINPage() {
 
   const systemColorScheme = useColorScheme();
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    onConfirm: null,
+  });
 
   // Define colors based on theme
   const COLORS = {
@@ -92,8 +99,7 @@ export default function ChangeMPINPage() {
       if (storedPhone) {
         setPhone(storedPhone);
       }
-    } catch (error) {
-    }
+    } catch (error) {}
   };
 
   const handlePinChange = (text) => {
@@ -142,17 +148,34 @@ export default function ChangeMPINPage() {
 
   const handleSubmit = async () => {
     if (!phone) {
-      Alert.alert("Error", "Phone number not found. Please login again.");
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: "Phone number not found. Please login again.",
+        type: "error",
+      });
+
       return;
     }
 
     if (pin.length !== 6 || confirmPin.length !== 6) {
-      Alert.alert("Error", "Please enter and confirm your 6-digit MPIN");
+      setAlertConfig({
+        visible: true,
+        title: "Invalid MPIN",
+        message: "Please enter and confirm your 6-digit MPIN",
+        type: "warning",
+      });
+
       return;
     }
 
     if (pin !== confirmPin) {
-      Alert.alert("Error", "MPINs do not match");
+      setAlertConfig({
+        visible: true,
+        title: "Mismatch",
+        message: "MPINs do not match",
+        type: "warning",
+      });
       return;
     }
 
@@ -166,17 +189,15 @@ export default function ChangeMPINPage() {
       "121212",
     ];
     if (weakMPINs.includes(pin)) {
-      Alert.alert(
-        "Weak MPIN Detected",
-        "For your protection, avoid using easy to guess MPINs like 123456 or 111111.",
-        [
-          { text: "Change MPIN", style: "cancel" },
-          {
-            text: "Continue Anyway",
-            onPress: () => proceedWithSubmission(pin),
-          },
-        ],
-      );
+      setAlertConfig({
+        visible: true,
+        title: "Weak MPIN Detected",
+        message:
+          "For your protection, avoid using easy to guess MPINs like 123456 or 111111.",
+        type: "warning",
+        onConfirm: () => proceedWithSubmission(pin),
+      });
+
       return;
     }
 
@@ -190,7 +211,7 @@ export default function ChangeMPINPage() {
       const formattedPhone = phone.startsWith("+")
         ? phone
         : phone.replace(/^0/, "");
-      const subdomain = user.branch.subdomain
+      const subdomain = user.branch.subdomain;
       const response = await fetch(
         `https://${subdomain}.kazibufastnet.com/api/app/setup_pin`,
         {
@@ -222,27 +243,24 @@ export default function ChangeMPINPage() {
         ["pin_set", "true"],
       ]);
 
-      Alert.alert(
-        "Success",
-        "MPIN changed successfully! For security purposes, you will be logged out.",
-        [
-          {
-            text: "OK",
-            onPress: async () => {
-              // Clear all auth data
-              await AsyncStorage.multiRemove([
-                "token",
-                "pin",
-                "pin_set",
-              ]);
-              // Navigate to login page
-              router.replace("/(auth)/(login)/login");
-            },
-          },
-        ],
-      );
+      setAlertConfig({
+        visible: true,
+        title: "Success",
+        message:
+          "MPIN changed successfully! For security purposes, you will be logged out.",
+        type: "success",
+        onConfirm: async () => {
+          await AsyncStorage.multiRemove(["token", "pin", "pin_set"]);
+          router.replace("/(auth)/(login)/login");
+        },
+      });
     } catch (err) {
-      Alert.alert("Error", err.message || "Something went wrong");
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: err.message || "Something went wrong",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -599,6 +617,20 @@ export default function ChangeMPINPage() {
               For security reasons, you'll need to login again with your new
               MPIN
             </Text>
+            <CustomAlert
+              visible={alertConfig.visible}
+              title={alertConfig.title}
+              message={alertConfig.message}
+              type={alertConfig.type}
+              confirmText="OK"
+              onConfirm={() => {
+                alertConfig.onConfirm?.();
+                setAlertConfig((prev) => ({ ...prev, visible: false }));
+              }}
+              onClose={() =>
+                setAlertConfig((prev) => ({ ...prev, visible: false }))
+              }
+            />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

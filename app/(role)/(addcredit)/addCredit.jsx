@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Modal,
   StatusBar,
@@ -20,7 +19,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import WebView from "react-native-webview";
 import { useTheme } from "../../../theme/ThemeContext";
-
+import CustomAlert from "../../../components/CustomAlert";
 const { width } = Dimensions.get("window");
 
 export default function CashInPage() {
@@ -35,6 +34,15 @@ export default function CashInPage() {
 
   const systemColorScheme = useColorScheme();
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
+  const [alertConfig, setAlertConfig] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    type: "info",
+    confirmText: "OK",
+    cancelText: null,
+    onConfirm: null,
+  });
 
   // Define colors based on theme (matching your profile page)
   const COLORS = {
@@ -89,8 +97,7 @@ export default function CashInPage() {
     try {
       const storedToken = await AsyncStorage.getItem("token");
       setToken(storedToken);
-    } catch (error) {
-    }
+    } catch (error) {}
   };
 
   // Predefined amount options
@@ -99,7 +106,13 @@ export default function CashInPage() {
   const handleCashIn = async () => {
     // Validate amount
     if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid amount");
+      setAlertConfig({
+        visible: true,
+        title: "Invalid Amount",
+        message: "Please enter a valid amount",
+        type: "warning",
+      });
+
       return;
     }
 
@@ -109,7 +122,13 @@ export default function CashInPage() {
       const storedToken = await AsyncStorage.getItem("token");
 
       if (!storedToken) {
-        Alert.alert("Login Required", "Please login again");
+        setAlertConfig({
+          visible: true,
+          title: "Login Required",
+          message: "Please login again",
+          type: "error",
+        });
+
         setLoading(false);
         return;
       }
@@ -131,7 +150,13 @@ export default function CashInPage() {
       const responseText = await response.text();
 
       if (!response.ok) {
-        Alert.alert("Error", `Failed to initiate payment: ${response.status}`);
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: `Failed to initiate payment: ${response.status}`,
+          type: "error",
+        });
+
         return;
       }
 
@@ -140,7 +165,13 @@ export default function CashInPage() {
       try {
         result = JSON.parse(responseText);
       } catch (parseError) {
-        Alert.alert("Error", "Invalid response from server");
+        setAlertConfig({
+          visible: true,
+          title: "Error",
+          message: "Invalid response from server",
+          type: "error",
+        });
+
         return;
       }
       // Check for different possible response formats
@@ -165,33 +196,36 @@ export default function CashInPage() {
         setShowWebView(true);
         setPaymentStatus("pending");
       } else {
-
         // Check if it's a success message but no URL (maybe direct credit add)
         if (result.success && result.message) {
-          Alert.alert("Success!", result.message, [
-            {
-              text: "OK",
-              onPress: () => {
-                setAmount("");
-                router.back();
-              },
+          setAlertConfig({
+            visible: true,
+            title: "Success!",
+            message: result.message,
+            type: "success",
+            onConfirm: () => {
+              setAmount("");
+              router.back();
             },
-          ]);
+          });
         } else {
-          Alert.alert(
-            "Payment Failed",
-            result.message ||
-              "Could not initiate payment. Please check the response format.",
-            [{ text: "OK" }],
-          );
+          setAlertConfig({
+            visible: true,
+            title: "Payment Failed",
+            message:
+              result.message || "Could not initiate payment. Please try again.",
+            type: "error",
+          });
         }
       }
     } catch (error) {
-      Alert.alert(
-        "Network Error",
-        "Unable to connect to payment server. Please check your internet connection.",
-        [{ text: "OK" }],
-      );
+      setAlertConfig({
+        visible: true,
+        title: "Network Error",
+        message:
+          "Unable to connect to payment server. Please check your internet connection.",
+        type: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -226,25 +260,23 @@ export default function CashInPage() {
     setShowWebView(false);
 
     if (success) {
-      Alert.alert(
-        "Payment Successful!",
-        `₱${parseFloat(amount).toLocaleString()} has been added to your account.`,
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              setAmount("");
-              router.back();
-            },
-          },
-        ],
-      );
+      setAlertConfig({
+        visible: true,
+        title: "Payment Successful!",
+        message: `₱${parseFloat(amount).toLocaleString()} has been added to your account.`,
+        type: "success",
+        onConfirm: () => {
+          setAmount("");
+          router.back();
+        },
+      });
     } else {
-      Alert.alert(
-        "Payment Failed",
-        "The payment was not completed. Please try again.",
-        [{ text: "OK" }],
-      );
+      setAlertConfig({
+        visible: true,
+        title: "Payment Failed",
+        message: "The payment was not completed. Please try again.",
+        type: "error",
+      });
     }
 
     setPaymentStatus("");
@@ -253,21 +285,19 @@ export default function CashInPage() {
 
   // Close WebView manually
   const handleCloseWebView = () => {
-    Alert.alert(
-      "Cancel Payment?",
-      "Are you sure you want to cancel the payment?",
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          onPress: () => {
-            setShowWebView(false);
-            setPaymentUrl("");
-            setPaymentStatus("");
-          },
-        },
-      ],
-    );
+    setAlertConfig({
+      visible: true,
+      title: "Cancel Payment?",
+      message: "Are you sure you want to cancel the payment?",
+      type: "warning",
+      confirmText: "Yes",
+      cancelText: "No",
+      onConfirm: () => {
+        setShowWebView(false);
+        setPaymentUrl("");
+        setPaymentStatus("");
+      },
+    });
   };
 
   const handleQuickAmount = (quickAmount) => {
@@ -289,17 +319,34 @@ export default function CashInPage() {
   // Show loading if checking token
   if (token === null) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.loadingContainer,
+          { backgroundColor: colors.background },
+        ]}
+      >
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.text }]}>Loading...</Text>
+        <Text style={[styles.loadingText, { color: colors.text }]}>
+          Loading...
+        </Text>
       </View>
     );
   }
 
   if (!token) {
     return (
-      <View style={[styles.authRequiredContainer, { backgroundColor: colors.background }]}>
-        <Ionicons name="wallet-outline" size={64} color={colors.primary} style={styles.authIcon} />
+      <View
+        style={[
+          styles.authRequiredContainer,
+          { backgroundColor: colors.background },
+        ]}
+      >
+        <Ionicons
+          name="wallet-outline"
+          size={64}
+          color={colors.primary}
+          style={styles.authIcon}
+        />
         <Text style={[styles.authRequiredText, { color: colors.text }]}>
           Please login to use cash-in
         </Text>
@@ -358,12 +405,19 @@ export default function CashInPage() {
         style={[styles.keyboardView, { backgroundColor: colors.background }]}
       >
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { backgroundColor: colors.background }]}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { backgroundColor: colors.background },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {/* Subtitle */}
           <View style={styles.subtitleContainer}>
-            <Ionicons name="wallet-outline" size={24} color={colors.textLight} />
+            <Ionicons
+              name="wallet-outline"
+              size={24}
+              color={colors.textLight}
+            />
             <Text style={[styles.subtitle, { color: colors.textLight }]}>
               Add funds to your account
             </Text>
@@ -384,8 +438,15 @@ export default function CashInPage() {
               Enter Amount
             </Text>
 
-            <View style={[styles.amountContainer, { borderBottomColor: colors.primary }]}>
-              <Text style={[styles.currencySymbol, { color: colors.text }]}>₱</Text>
+            <View
+              style={[
+                styles.amountContainer,
+                { borderBottomColor: colors.primary },
+              ]}
+            >
+              <Text style={[styles.currencySymbol, { color: colors.text }]}>
+                ₱
+              </Text>
               <TextInput
                 style={[styles.amountInput, { color: colors.text }]}
                 value={amount}
@@ -398,7 +459,9 @@ export default function CashInPage() {
               />
             </View>
 
-            <Text style={[styles.quickAmountLabel, { color: colors.textLight }]}>
+            <Text
+              style={[styles.quickAmountLabel, { color: colors.textLight }]}
+            >
               Quick Select:
             </Text>
             <View style={styles.quickAmountContainer}>
@@ -463,7 +526,13 @@ export default function CashInPage() {
               </Text>
             </View>
 
-            <View style={[styles.summaryRow, styles.totalRow, { borderTopColor: colors.border }]}>
+            <View
+              style={[
+                styles.summaryRow,
+                styles.totalRow,
+                { borderTopColor: colors.border },
+              ]}
+            >
               <Text style={[styles.totalLabel, { color: colors.text }]}>
                 Total:
               </Text>
@@ -484,7 +553,10 @@ export default function CashInPage() {
             style={[
               styles.cashInButton,
               { backgroundColor: colors.success },
-              (!amount || parseFloat(amount) <= 0 || loading || showWebView) && [
+              (!amount ||
+                parseFloat(amount) <= 0 ||
+                loading ||
+                showWebView) && [
                 styles.cashInButtonDisabled,
                 { backgroundColor: colors.gray },
               ],
@@ -511,24 +583,50 @@ export default function CashInPage() {
 
           {/* Info Text */}
           <View style={styles.infoContainer}>
-            <Ionicons name="lock-closed-outline" size={16} color={colors.textLight} />
+            <Ionicons
+              name="lock-closed-outline"
+              size={16}
+              color={colors.textLight}
+            />
             <Text style={[styles.infoText, { color: colors.textLight }]}>
-              You will be redirected to a secure payment page to complete the transaction.
+              You will be redirected to a secure payment page to complete the
+              transaction.
             </Text>
           </View>
 
           {/* Payment Methods Info */}
-          <View style={[styles.paymentMethodsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.paymentMethodsCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
             <Text style={[styles.paymentMethodsTitle, { color: colors.text }]}>
               Supported Payment Methods
             </Text>
             <View style={styles.paymentMethodsRow}>
-              <Ionicons name="card-outline" size={20} color={colors.textLight} />
-              <Text style={[styles.paymentMethodText, { color: colors.textLight }]}>Credit/Debit Cards</Text>
+              <Ionicons
+                name="card-outline"
+                size={20}
+                color={colors.textLight}
+              />
+              <Text
+                style={[styles.paymentMethodText, { color: colors.textLight }]}
+              >
+                Credit/Debit Cards
+              </Text>
             </View>
             <View style={styles.paymentMethodsRow}>
-              <Ionicons name="phone-portrait-outline" size={20} color={colors.textLight} />
-              <Text style={[styles.paymentMethodText, { color: colors.textLight }]}>Mobile E-Wallets</Text>
+              <Ionicons
+                name="phone-portrait-outline"
+                size={20}
+                color={colors.textLight}
+              />
+              <Text
+                style={[styles.paymentMethodText, { color: colors.textLight }]}
+              >
+                Mobile E-Wallets
+              </Text>
             </View>
           </View>
         </ScrollView>
@@ -541,11 +639,21 @@ export default function CashInPage() {
         onRequestClose={handleCloseWebView}
         statusBarTranslucent
       >
-        <View style={[styles.webViewContainer, { backgroundColor: colors.background }]}>
-          <View style={[styles.webViewHeader, { backgroundColor: colors.primary }]}>
+        <View
+          style={[
+            styles.webViewContainer,
+            { backgroundColor: colors.background },
+          ]}
+        >
+          <View
+            style={[styles.webViewHeader, { backgroundColor: colors.primary }]}
+          >
             <TouchableOpacity
               onPress={handleCloseWebView}
-              style={[styles.closeButton, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+              style={[
+                styles.closeButton,
+                { backgroundColor: "rgba(255,255,255,0.2)" },
+              ]}
             >
               <Ionicons name="close" size={24} color={colors.white} />
             </TouchableOpacity>
@@ -556,9 +664,16 @@ export default function CashInPage() {
           </View>
 
           {paymentStatus === "pending" && (
-            <View style={[styles.paymentStatus, { backgroundColor: colors.primary + '15' }]}>
+            <View
+              style={[
+                styles.paymentStatus,
+                { backgroundColor: colors.primary + "15" },
+              ]}
+            >
               <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={[styles.paymentStatusText, { color: colors.primary }]}>
+              <Text
+                style={[styles.paymentStatusText, { color: colors.primary }]}
+              >
                 Processing payment...
               </Text>
             </View>
@@ -571,35 +686,83 @@ export default function CashInPage() {
               onNavigationStateChange={handleWebViewNavigationStateChange}
               startInLoadingState={true}
               renderLoading={() => (
-                <View style={[styles.webViewLoading, { backgroundColor: colors.background }]}>
+                <View
+                  style={[
+                    styles.webViewLoading,
+                    { backgroundColor: colors.background },
+                  ]}
+                >
                   <ActivityIndicator size="large" color={colors.primary} />
-                  <Text style={[styles.webViewLoadingText, { color: colors.text }]}>
+                  <Text
+                    style={[styles.webViewLoadingText, { color: colors.text }]}
+                  >
                     Loading payment page...
                   </Text>
                 </View>
               )}
               onError={(syntheticEvent) => {
                 const { nativeEvent } = syntheticEvent;
-                Alert.alert("Error", "Failed to load payment page");
+                setAlertConfig({
+                  visible: true,
+                  title: "Error",
+                  message: "Failed to load payment page",
+                  type: "error",
+                });
               }}
             />
           ) : (
-            <View style={[styles.noUrlContainer, { backgroundColor: colors.background }]}>
-              <Ionicons name="alert-circle-outline" size={48} color={colors.danger} />
+            <View
+              style={[
+                styles.noUrlContainer,
+                { backgroundColor: colors.background },
+              ]}
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={48}
+                color={colors.danger}
+              />
               <Text style={[styles.noUrlText, { color: colors.text }]}>
                 No payment URL available
               </Text>
             </View>
           )}
 
-          <View style={[styles.webViewFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-            <Ionicons name="shield-checkmark-outline" size={16} color={colors.success} />
-            <Text style={[styles.webViewFooterText, { color: colors.textLight }]}>
+          <View
+            style={[
+              styles.webViewFooter,
+              {
+                backgroundColor: colors.surface,
+                borderTopColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={16}
+              color={colors.success}
+            />
+            <Text
+              style={[styles.webViewFooterText, { color: colors.textLight }]}
+            >
               Do not close this window until payment is complete
             </Text>
           </View>
         </View>
       </Modal>
+      <CustomAlert
+        visible={alertConfig.visible}
+        title={alertConfig.title}
+        message={alertConfig.message}
+        type={alertConfig.type}
+        confirmText={alertConfig.confirmText}
+        cancelText={alertConfig.cancelText}
+        onConfirm={() => {
+          alertConfig.onConfirm?.();
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+        }}
+        onClose={() => setAlertConfig((prev) => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }
@@ -822,7 +985,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   paymentMethodsCard: {
-    alignItems:'center',
+    alignItems: "center",
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,

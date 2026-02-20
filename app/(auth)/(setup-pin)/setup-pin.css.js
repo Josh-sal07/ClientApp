@@ -1,4 +1,12 @@
-import { StyleSheet } from "react-native";
+import { StyleSheet, Dimensions } from "react-native";
+
+const { width } = Dimensions.get("window");
+
+const scaleSize = (size) => {
+  const baseWidth = 375;
+  const scale = width / baseWidth;
+  return Math.round(size * Math.min(scale, 1.3));
+};
 
 const styles = StyleSheet.create({
   scrollContainer: {
@@ -8,153 +16,136 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
-    backgroundColor: "#0C1824",
+    padding: scaleSize(20),
     minHeight: "100%",
   },
   backButton: {
     alignSelf: "flex-start",
-    marginBottom: 20,
-    padding: 8,
+    marginBottom: scaleSize(20),
+    padding: scaleSize(8),
   },
   backButtonText: {
-    color: "#00afa1ff",
-    fontSize: 26,
+    fontSize: scaleSize(26),
     fontWeight: "600",
   },
   logoContainer: {
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: scaleSize(30),
   },
   logo: {
-    width: 80,
-    height: 80,
-    marginBottom: 10,
+    width: scaleSize(80),
+    height: scaleSize(80),
+    marginBottom: scaleSize(10),
   },
   appName: {
-    fontSize: 22,
+    fontSize: scaleSize(22),
     fontWeight: "700",
-    color: "#00afa1ff",
   },
   title: {
-    fontSize: 28,
+    fontSize: scaleSize(28),
     fontWeight: "700",
-    marginBottom: 10,
-    color: "#ffffffff",
+    marginBottom: scaleSize(10),
     textAlign: "center",
   },
   subtitle: {
-    fontSize: 16,
-    color: "#f8f8f8ff",
-    marginBottom: 40,
+    fontSize: scaleSize(16),
+    marginBottom: scaleSize(40),
     textAlign: "center",
-    lineHeight: 22,
-    paddingHorizontal: 20,
+    lineHeight: scaleSize(22),
+    paddingHorizontal: scaleSize(20),
   },
   pinContainer: {
     width: "100%",
     maxWidth: 400,
-    marginBottom: 30,
+    marginBottom: scaleSize(30),
   },
   pinSection: {
-    marginBottom: 25,
+    marginBottom: scaleSize(25),
   },
   pinHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: scaleSize(15),
   },
   pinLabel: {
-    fontSize: 16,
+    fontSize: scaleSize(16),
     fontWeight: "600",
-    color: "#f0f0f0ff",
   },
   visibilityButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    backgroundColor: "#f0f0f0",
+    paddingVertical: scaleSize(4),
+    paddingHorizontal: scaleSize(12),
     borderRadius: 6,
   },
   visibilityButtonText: {
-    color: "#00afa1ff",
-    fontSize: 12,
+    fontSize: scaleSize(12),
     fontWeight: "600",
   },
   pinInputsContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
-    marginBottom: 10,
+    marginBottom: scaleSize(10),
+    gap: scaleSize(8),
   },
   pinInput: {
-    width: 48,
-    height: 60,
-    borderColor: "#ddd",
+    flex: 1,
+    height: scaleSize(60),
     borderWidth: 1,
     borderRadius: 12,
-    fontSize: 22,
-    backgroundColor: "#f9f9f9",
+    fontSize: scaleSize(22),
     textAlign: "center",
   },
   pinInputFilled: {
-    borderColor: "#00afa1ff",
-    backgroundColor: "#fff",
+    // Border color will be applied dynamically
   },
   pinInputMatched: {
-    borderColor: "#4CAF50",
-    backgroundColor: "#f8fff8",
+    // Border color will be applied dynamically
   },
   separator: {
     height: 1,
-    backgroundColor: "#eee",
-    marginVertical: 15,
+    marginVertical: scaleSize(15),
   },
   statusContainer: {
     alignItems: "center",
-    marginTop: 15,
-    padding: 10,
+    marginTop: scaleSize(15),
+    padding: scaleSize(10),
     borderRadius: 8,
-    backgroundColor: "#f8f9fa",
   },
   statusText: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: scaleSize(14),
     textAlign: "center",
   },
   statusTextSuccess: {
-    fontSize: 14,
-    color: "#4CAF50",
+    fontSize: scaleSize(14),
     fontWeight: "600",
     textAlign: "center",
   },
   statusTextError: {
-    fontSize: 14,
-    color: "#f44336",
+    fontSize: scaleSize(14),
     fontWeight: "600",
     textAlign: "center",
   },
   button: {
     width: "100%",
     maxWidth: 400,
-    backgroundColor: "#30BCBB",
-    paddingVertical: 16,
+    paddingVertical: scaleSize(16),
     borderRadius: 12,
     alignItems: "center",
-    marginBottom: 20,
-    shadowColor: "#00afa1ff",
+    marginBottom: scaleSize(20),
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 5,
-    marginTop: 20,
+    marginTop: scaleSize(20),
   },
   buttonDisabled: {
     opacity: 0.5,
   },
   buttonText: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: scaleSize(18),
     fontWeight: "600",
   },
 });
