@@ -25,6 +25,7 @@ export default function PhoneVerifyScreen() {
   const router = useRouter();
   const { mode, theme } = useTheme();
   const systemColorScheme = useColorScheme();
+  const [hasExistingPhone, setHasExistingPhone] = useState(false);
 
   const {
     alertConfig,
@@ -116,24 +117,47 @@ export default function PhoneVerifyScreen() {
   };
 
   // Load existing phone on mount
+  // useEffect(() => {
+  //   const loadExistingPhone = async () => {
+  //     try {
+  //       // Check for user_phone (from RootLayout logic)
+  //       const savedPhone = await AsyncStorage.getItem("user_phone");
+  //       if (savedPhone) {
+  //         setPhone(savedPhone);
+  //       }
+
+  //       // Also clear any temporary data
+  //       await AsyncStorage.removeItem("temp_phone");
+  //     } catch (error) {
+  //       console.error("Error loading phone:", error);
+  //     }
+  //   };
+
+  //   loadExistingPhone();
+  // }, []);
+
   useEffect(() => {
-    const loadExistingPhone = async () => {
-      try {
-        // Check for user_phone (from RootLayout logic)
-        const savedPhone = await AsyncStorage.getItem("user_phone");
-        if (savedPhone) {
-          setPhone(savedPhone);
-        }
+  const loadExistingPhone = async () => {
+    try {
+      const savedPhone = await AsyncStorage.getItem("user_phone");
 
-        // Also clear any temporary data
-        await AsyncStorage.removeItem("temp_phone");
-      } catch (error) {
-        console.error("Error loading phone:", error);
+      if (savedPhone) {
+        setPhone(savedPhone);
+        setHasExistingPhone(true); // ✅ Enable Sign In
+      } else {
+        setHasExistingPhone(false); // ❌ Disable Sign In
       }
-    };
 
-    loadExistingPhone();
-  }, []);
+      await AsyncStorage.removeItem("temp_phone");
+    } catch (error) {
+      console.error("Error loading phone:", error);
+      setHasExistingPhone(false);
+    }
+  };
+
+  loadExistingPhone();
+}, []);
+
 
   return (
     <View style={{ flex: 1 }}>
@@ -142,7 +166,7 @@ export default function PhoneVerifyScreen() {
         backgroundColor="transparent"
         barStyle={effectiveMode === "dark" ? "light-content" : "dark-content"}
       />
-      
+
       <LinearGradient
         colors={getHeaderGradientColors()}
         start={{ x: 0.5, y: 1 }} // Start at bottom
@@ -153,11 +177,13 @@ export default function PhoneVerifyScreen() {
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          <ScrollView 
+          <ScrollView
             contentContainerStyle={styles.scroll}
             showsVerticalScrollIndicator={false}
           >
-            <View style={[styles.container, { backgroundColor: "transparent" }]}>
+            <View
+              style={[styles.container, { backgroundColor: "transparent" }]}
+            >
               <Image
                 source={require("../../../assets/images/kazi.png")}
                 style={styles.logo}
@@ -167,13 +193,15 @@ export default function PhoneVerifyScreen() {
                 Verify Phone Number
               </Text>
 
-              <View style={[
-                styles.inputWrapper, 
-                { 
-                  backgroundColor: colors.inputBackground,
-                  borderColor: colors.border,
-                }
-              ]}>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
                 <Text style={[styles.countryCode, { color: colors.text }]}>
                   +63
                 </Text>
@@ -183,7 +211,9 @@ export default function PhoneVerifyScreen() {
                   placeholderTextColor={colors.placeholder}
                   keyboardType="phone-pad"
                   value={formatPhone(phone)}
-                  onChangeText={(t) => setPhone(t.replace(/\D/g, "").slice(0, 10))}
+                  onChangeText={(t) =>
+                    setPhone(t.replace(/\D/g, "").slice(0, 10))
+                  }
                   maxLength={13}
                   autoFocus={!phone}
                 />
@@ -212,16 +242,22 @@ export default function PhoneVerifyScreen() {
               <View style={styles.signInContainer}>
                 <Text style={[styles.signInText, { color: colors.text }]}>
                   Already have an account?{" "}
-                  <Text 
-                    style={[styles.signInLink, { color: colors.primary }]} 
-                    onPress={handleSignIn}
+                  <Text
+                    style={[
+                      styles.signInLink,
+                      {
+                        color: hasExistingPhone ? colors.primary : colors.gray,
+                        opacity: hasExistingPhone ? 1 : 0.5,
+                      },
+                    ]}
+                    onPress={hasExistingPhone ? handleSignIn : null}
                   >
                     Sign In
                   </Text>
                 </Text>
               </View>
             </View>
-            
+
             <CustomAlert
               visible={alertConfig.visible}
               title={alertConfig.title}

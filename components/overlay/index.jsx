@@ -4,6 +4,7 @@ import { useUserStore } from "../../store/user";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Linking } from "react-native";
 import {
   Alert,
   ActivityIndicator,
@@ -759,6 +760,7 @@ const ChatBot = () => {
     "Can't access certain websites or apps",
     "How to change my Wi-Fi password?",
     "App not working properly",
+    "💬 Chat with Live Agent",
   ];
 
   // No internet connection follow-up questions
@@ -978,7 +980,14 @@ const ChatBot = () => {
   };
 
   // Handle quick replies
+  // Handle quick replies
   const handleQuickReply = async (question) => {
+
+      if (question === "💬 Chat with Live Agent") {
+    openMessenger();
+    return;
+  }
+
     const userMsg = {
       id: Date.now().toString(),
       text: question,
@@ -992,8 +1001,12 @@ const ChatBot = () => {
     setIsTyping(true);
 
     let context = null;
+    
     if (question === "No internet connection") context = "no_internet";
-    else if (question === "Slow internet connection") context = "slow_internet";
+    else if (question === "App not working properly") {
+      context = "app_issue";
+    } else if (question === "Slow internet connection")
+      context = "slow_internet";
     else if (question === "Can't access certain websites or apps")
       context = "cant_access_websites";
     else if (question === "How to change my Wi-Fi password?")
@@ -1008,12 +1021,26 @@ const ChatBot = () => {
       saveMessages(finalMessages);
       setIsTyping(false);
 
+      // IMPORTANT: For app_issue, make sure context is maintained
+      // and don't override with other UI elements
+      if (context === "app_issue") {
+        // Keep the context and ensure no other UI elements interfere
+        setShowContactInfo(false);
+        setShowTicketPrompt(false);
+        setShowYesNoQuestion(false);
+        setShowRestartOptions(false);
+      }
+
       if (context === "cant_access_websites" || context === "change_password") {
         setShowContactInfo(true);
         setShowTicketPrompt(true);
       }
     }, 1500);
   };
+
+  const openMessenger = () => {
+  Linking.openURL("https://m.me/kazibufast");
+};
 
   // Handle no internet follow-up
   const handleNoInternetFollowUp = async (response) => {
@@ -1151,16 +1178,15 @@ const ChatBot = () => {
           setShowContactInfo(true);
           setShowTicketPrompt(true);
         }
-      }else if (currentQuestion === "wifi_signal_distance") {
-  if (response) {
-    botText =
-      "Try moving closer to the router. Walls, appliances, and thick concrete can weaken WiFi signal. You can also reposition your router to a central location.";
-  } else {
-    botText =
-      "Since you're near the router and still disconnecting, please try restarting your router. Also check if the LOS light is stable (not red).";
-  }
-}
-
+      } else if (currentQuestion === "wifi_signal_distance") {
+        if (response) {
+          botText =
+            "Try moving closer to the router. Walls, appliances, and thick concrete can weaken WiFi signal. You can also reposition your router to a central location.";
+        } else {
+          botText =
+            "Since you're near the router and still disconnecting, please try restarting your router. Also check if the LOS light is stable (not red).";
+        }
+      }
 
       const botResponse = {
         id: Date.now().toString(),
@@ -1312,6 +1338,13 @@ const ChatBot = () => {
         return {
           id: Date.now().toString(),
           text: "Thanks for reaching out. How can I help you further?",
+          sender: "bot",
+          timestamp: new Date(),
+        };
+      case "app_issue":
+        return {
+          id: Date.now().toString(),
+          text: "It looks like the app is not working properly. For faster assistance, you can chat directly with our live support agent.",
           sender: "bot",
           timestamp: new Date(),
         };
@@ -1946,6 +1979,7 @@ const ChatBot = () => {
   const renderListFooter = () => {
     return (
       <>
+        {/* Typing Indicator */}
         {isTyping && (
           <View style={styles.typingIndicator}>
             <Ionicons
@@ -1961,6 +1995,7 @@ const ChatBot = () => {
           </View>
         )}
 
+        {/* Yes / No Question */}
         {showYesNoQuestion && !isTyping && (
           <View style={styles.yesNoContainer}>
             <TouchableOpacity
@@ -1978,6 +2013,7 @@ const ChatBot = () => {
           </View>
         )}
 
+        {/* Restart Options */}
         {showRestartOptions && !isTyping && (
           <View style={styles.quickRepliesContainer}>
             {restartFollowUp.map((reply, index) => (
@@ -1992,8 +2028,10 @@ const ChatBot = () => {
           </View>
         )}
 
+        {/* Contact Info */}
         {showContactInfo && renderContactInfo()}
 
+        {/* Slow Internet Yes/No */}
         {conversationContext === "slow_internet" &&
           !showContactInfo &&
           !showTicketPrompt &&
@@ -2016,6 +2054,57 @@ const ChatBot = () => {
             </View>
           )}
 
+        {/* 🔥 FIXED — App Issue Messenger Button - Always show when context is app_issue */}
+        {conversationContext === "app_issue" && !isTyping && (
+          <View style={styles.suggestionsContainer}>
+            <TouchableOpacity
+              style={[
+                styles.suggestionButton,
+                {
+                  backgroundColor: "#0084FF20",
+                  borderColor: "#0084FF",
+                },
+              ]}
+              onPress={openMessenger}
+            >
+              <Text
+                style={[
+                  styles.suggestionText,
+                  { color: "#0084FF", fontWeight: "bold" },
+                ]}
+              >
+                💬 Chat with Live Agent
+              </Text>
+            </TouchableOpacity>
+
+            {/* Optional: Add alternative contact methods */}
+            <TouchableOpacity
+              style={[
+                styles.suggestionButton,
+                {
+                  backgroundColor: colors.primary + "10",
+                  borderColor: colors.primary,
+                  marginTop: 8,
+                },
+              ]}
+              onPress={() => {
+                setShowContactInfo(true);
+                setShowTicketPrompt(true);
+              }}
+            >
+              <Text
+                style={[
+                  styles.suggestionText,
+                  { color: colors.primary, fontWeight: "bold" },
+                ]}
+              >
+                📞 Contact Support Directly
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Default Quick Questions */}
         {!isTyping &&
           !conversationContext &&
           !showYesNoQuestion &&
@@ -2037,6 +2126,7 @@ const ChatBot = () => {
             </View>
           )}
 
+        {/* Submit Ticket Prompt */}
         {showTicketPrompt && showContactInfo && !isTyping && (
           <View style={styles.suggestionsContainer}>
             <TouchableOpacity
@@ -2050,6 +2140,7 @@ const ChatBot = () => {
           </View>
         )}
 
+        {/* Get Contact Info for Other Issues */}
         {(conversationContext === "cant_access_websites" ||
           conversationContext === "change_password") &&
           !showContactInfo &&
@@ -2121,6 +2212,13 @@ const ChatBot = () => {
             </View>
 
             <View style={styles.headerActions}>
+              {/* Add Messenger button here */}
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                onPress={openMessenger}
+              >
+                <Ionicons name="chatbubble-ellipses" size={22} color="#0084FF" />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.headerIconButton}
                 onPress={() => {

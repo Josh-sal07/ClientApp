@@ -272,6 +272,8 @@ function Profile() {
           ]);
 
           setToken(null);
+          useUserStore.getState().setUnlocked(false);
+
           router.replace("/(auth)/(login)/login");
         } catch (error) {
           setAlertConfig({

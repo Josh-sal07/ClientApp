@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export const useUserStore = create((set) => ({
   user: null,
   hydrated: false, // ✅ important
+  isUnlocked: false, // 🔥 NEW
 
   // ✅ sync state update
   setUser: (userObj) => {
@@ -41,4 +42,8 @@ export const useUserStore = create((set) => ({
     await AsyncStorage.multiRemove(["user", "token"]);
     set({ user: null });
   },
+
+   setUnlocked: (value) => set({ isUnlocked: value }), // 🔥 NEW
 }));
+
+

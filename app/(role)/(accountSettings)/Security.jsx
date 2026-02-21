@@ -194,8 +194,18 @@ const Security = () => {
 
   const toggleSmsAlerts = async (value) => {
     if (!value) {
-      setSmsAlertsEnabled(false);
-      await updateSmsBackend(false);
+      setAlertConfig({
+        visible: true,
+        title: "Disable SMS Notifications",
+        message: "Are you sure you want to stop receiving SMS alerts?",
+        type: "warning",
+        confirmText: "Disable",
+        cancelText: "Cancel",
+        onConfirm: async () => {
+          setSmsAlertsEnabled(false);
+          await updateSmsBackend(false);
+        },
+      });
       return;
     }
 
@@ -251,8 +261,19 @@ const Security = () => {
       value: biometricEnabled,
       onToggle: async (value) => {
         if (!value) {
-          await AsyncStorage.removeItem("biometric_enabled");
-          setBiometricEnabled(false);
+          setAlertConfig({
+            visible: true,
+            title: "Disable Biometric Login",
+            message:
+              "Are you sure you want to disable biometric authentication?",
+            type: "warning",
+            confirmText: "Disable",
+            cancelText: "Cancel",
+            onConfirm: async () => {
+              await AsyncStorage.removeItem("biometric_enabled");
+              setBiometricEnabled(false);
+            },
+          });
           return;
         }
 

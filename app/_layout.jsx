@@ -20,12 +20,12 @@ export default function RootLayout() {
   const loadUser = useUserStore((s) => s.loadUser);
 
   const [showSplash, setShowSplash] = useState(!splashShown);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const isUnlocked = useUserStore((s) => s.isUnlocked);
   const hasNavigated = useRef(false);
 
   // ✅ CONDITIONAL SESSION TIMEOUT - Only enabled when authenticated
   const { expired, setExpired } = useSessionTimeout({
-    enabled: isAuthenticated,
+    enabled: isUnlocked,
     timeoutMinutes: 15,
   });
 
@@ -44,31 +44,15 @@ export default function RootLayout() {
       const token = await AsyncStorage.getItem("token");
 
       if (token) {
-        // User has a token - check biometrics if enabled
-        const biometricEnabled = await AsyncStorage.getItem("biometric_enabled");
-        if (biometricEnabled === "true") {
-          const result = await LocalAuthentication.authenticateAsync({
-            promptMessage: "Unlock with Biometrics",
-            fallbackLabel: "Use MPIN",
-          });
-
-          if (!result.success) {
-            // Biometric failed - go back to login
-            router.replace("/(auth)/(login)/login");
-            return;
-          }
-        }
-
         // User is authenticated
         loadUser();
-        setIsAuthenticated(true);
         router.replace("/(auth)/(login)");
         return;
       }
 
       // No token - check if phone number is stored (user has entered phone before)
       const storedPhone = await AsyncStorage.getItem("user_phone");
-      
+
       if (storedPhone) {
         // User has previously entered a phone number - go to login
         router.replace("/(auth)/(login)/login");
@@ -95,7 +79,7 @@ export default function RootLayout() {
   // Reset auth state when session expires
   const handleSessionExpired = () => {
     setExpired(false);
-    setIsAuthenticated(false);
+    useUserStore.getState().setUnlocked(false);
     router.replace("/(auth)/(login)/login");
   };
 
@@ -118,7 +102,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false }} />
 
       {/* ✅ CUSTOM SESSION ALERT - Only shows when authenticated */}
-      {isAuthenticated && (
+      {isUnlocked && (
         <SessionExpiredModal
           visible={expired}
           onConfirm={handleSessionExpired}

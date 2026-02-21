@@ -1478,18 +1478,12 @@ const MySubscriptionsScreen = () => {
           { useNativeDriver: false },
         )}
       >
-        {/* Summary Card positioned over the image */}
-        <View style={[styles.summaryCard]}>
-          <View style={styles.summaryHeader}>
-            <View style={styles.summaryContent}>
-              <Text style={[styles.summaryTitle, { color: colors.text }]}>
-                My Subscriptions
-              </Text>
-            </View>
-          </View>
-        </View>
+
         {/* Subscriptions List */}
         <View style={styles.section}>
+          <Text style={[styles.summaryTitle, { color: colors.text }]}>
+                My Subscriptions
+              </Text>
           <Text style={[styles.summarySubtitle, { color: colors.text }]}>
             {subscriptions.length} active subscription
             {subscriptions.length !== 1 ? "s" : ""}
@@ -1621,7 +1615,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 4,
     left: 5,
-    top: 15,
+    top: 2,
     marginBottom: 20,
   },
   summaryStats: {
@@ -1654,8 +1648,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingTop: 20,
-    paddingBottom: 40,
+    paddingTop: 1,
+    paddingBottom: 30,
   },
   section: {
     marginBottom: 24,

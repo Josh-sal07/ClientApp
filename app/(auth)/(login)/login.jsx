@@ -1,11 +1,9 @@
 import React from "react";
 import {
-  Alert,
   Dimensions,
   ActivityIndicator,
   Image,
   StatusBar,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -44,11 +42,13 @@ export default function MpinLoginScreen() {
     handleChangeNumber,
     resetMpin,
     isLoading,
+    isBiometricAvailable,
+    handleBiometricLogin,
   } = useLoginLogic();
 
   const { mode, theme } = useTheme();
   const systemColorScheme = useColorScheme();
-  
+
   // Determine effective theme mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
 
@@ -163,7 +163,9 @@ export default function MpinLoginScreen() {
                       width: keySize,
                       height: keySize,
                       borderRadius: keySize / 2,
-                      backgroundColor: isBackspace ? colors.lightGray : colors.white,
+                      backgroundColor: isBackspace
+                        ? colors.lightGray
+                        : colors.white,
                     },
                   ]}
                   activeOpacity={0.7}
@@ -242,7 +244,9 @@ export default function MpinLoginScreen() {
                       height: dotSize,
                       borderRadius: dotSize / 2,
                       borderColor: mpin[index] ? colors.primary : colors.border,
-                      backgroundColor: mpin[index] ? colors.primary : "transparent",
+                      backgroundColor: mpin[index]
+                        ? colors.primary
+                        : "transparent",
                     },
                   ]}
                 >
@@ -289,18 +293,22 @@ export default function MpinLoginScreen() {
         backgroundColor="transparent"
         barStyle={effectiveMode === "dark" ? "light-content" : "dark-content"}
       />
-      
+
       <LinearGradient
         colors={getHeaderGradientColors()}
         start={{ x: 0.5, y: 1 }} // Start at bottom
         end={{ x: 0.5, y: 0 }} // End at top
         style={{ flex: 1 }}
       >
-        <SafeAreaView style={[styles.safeArea, { backgroundColor: "transparent" }]}>
+        <SafeAreaView
+          style={[styles.safeArea, { backgroundColor: "transparent" }]}
+        >
           <View style={styles.container}>
             <View style={{ flex: height < 700 ? 0.05 : 0.1 }} />
 
-            <View style={[styles.logoContainer, { marginBottom: scaleSize(20) }]}>
+            <View
+              style={[styles.logoContainer, { marginBottom: scaleSize(20) }]}
+            >
               <Image
                 source={require("../../../assets/images/kazi.png")}
                 style={[
@@ -313,22 +321,37 @@ export default function MpinLoginScreen() {
                 resizeMode="contain"
               />
               <View style={styles.logoTextContainer}>
-                <Text style={[styles.appName, { fontSize: scaleSize(22), color: colors.text }]}>
+                <Text
+                  style={[
+                    styles.appName,
+                    { fontSize: scaleSize(22), color: colors.text },
+                  ]}
+                >
                   KAZIBUFAST
                 </Text>
               </View>
             </View>
 
             {/* Phone Number Section */}
-            <View style={[styles.phoneSection, { marginBottom: scaleSize(30) }]}>
+            <View
+              style={[styles.phoneSection, { marginBottom: scaleSize(30) }]}
+            >
               {phoneNumber ? (
-                <Text style={[styles.phoneNumber, { fontSize: scaleSize(18), color: colors.white }]}>
+                <Text
+                  style={[
+                    styles.phoneNumber,
+                    { fontSize: scaleSize(18), color: colors.white },
+                  ]}
+                >
                   +63{phoneNumber || AsyncStorage.getItem("phone")}
                 </Text>
               ) : (
                 <ActivityIndicator size="small" color={colors.primary} />
               )}
-              <TouchableOpacity onPress={handleChangeNumber} disabled={isVerifying}>
+              <TouchableOpacity
+                onPress={handleChangeNumber}
+                disabled={isVerifying}
+              >
                 <Ionicons
                   name="create-outline"
                   size={scaleSize(22)}
@@ -338,7 +361,9 @@ export default function MpinLoginScreen() {
             </View>
 
             {/* MPIN Input Section */}
-            <View style={[styles.mpinContainer, { marginBottom: scaleSize(40) }]}>
+            <View
+              style={[styles.mpinContainer, { marginBottom: scaleSize(40) }]}
+            >
               <Text
                 style={[
                   styles.securityWarning,
@@ -355,7 +380,11 @@ export default function MpinLoginScreen() {
 
               {/* Skeleton loading overlay when verifying */}
               {isVerifying && (
-                <View style={[styles.verifyingOverlay, { backgroundColor: "rgba(0, 0, 0, 0.5)" }]}>
+                <View
+                  style={[
+                    styles.verifyingOverlay,
+                  ]}
+                >
                   <ActivityIndicator size="large" color={colors.primary} />
                   <Text style={[styles.verifyingText, { color: colors.white }]}>
                     Verifying MPIN...
@@ -393,9 +422,43 @@ export default function MpinLoginScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-            
+
+            {isBiometricAvailable && (
+              <TouchableOpacity
+                onPress={handleBiometricLogin}
+                activeOpacity={0.8}
+                style={{
+                  marginTop: scaleSize(20),
+                  alignItems: "center",
+                  justifyContent: "center",
+                  paddingVertical: scaleSize(12),
+                  borderRadius: 50,
+                  backgroundColor: colors.primary,
+                  flexDirection: "row",
+                  maxWidth: 250,
+                  left:55,
+                  gap: 8,
+                }}
+              >
+                <Ionicons
+                  name="finger-print"
+                  size={scaleSize(22)}
+                  color={colors.white}
+                />
+                <Text
+                  style={{
+                    color: colors.white,
+                    fontSize: scaleSize(16),
+                    fontWeight: "600",
+                  }}
+                >
+                  Use Biometrics
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <View style={{ flex: height < 700 ? 0.05 : 0.1 }} />
-            
+
             <CustomAlert
               visible={alertConfig.visible}
               title={alertConfig.title}
@@ -405,10 +468,10 @@ export default function MpinLoginScreen() {
               cancelText="Cancel"
               onConfirm={() => {
                 alertConfig.onConfirm?.();
-                setAlertConfig(prev => ({ ...prev, visible: false }));
+                setAlertConfig((prev) => ({ ...prev, visible: false }));
               }}
               onClose={() =>
-                setAlertConfig(prev => ({ ...prev, visible: false }))
+                setAlertConfig((prev) => ({ ...prev, visible: false }))
               }
             />
           </View>

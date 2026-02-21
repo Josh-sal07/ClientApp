@@ -64,7 +64,7 @@ export default function ClientTabsLayout() {
       floatingButton: "#1fe1cbff",
       floatingButtonBorder: "#FFFFFF",
       loadingIndicator: "#1fe1cbff",
-      textLoading: '#1fe1cbff'
+      textLoading: "#1fe1cbff",
     },
     dark: {
       primary: "#1f6f68",
@@ -90,7 +90,7 @@ export default function ClientTabsLayout() {
       floatingButton: "#1f6f68",
       floatingButtonBorder: "#333333",
       loadingIndicator: "#1fe1cbff",
-      textLoading: '#1fe1cbff'
+      textLoading: "#1fe1cbff",
     },
   };
 
@@ -107,12 +107,12 @@ export default function ClientTabsLayout() {
   const qrButtonAnim = useRef(new Animated.Value(0)).current; // 0 = visible, 1 = hidden
 
   useEffect(() => {
-  if (pathname.includes("/home")) setCurrentRoute("home");
-  else if (pathname.includes("/subscriptions")) setCurrentRoute("subscriptions");
-  else if (pathname.includes("/tickets")) setCurrentRoute("tickets");
-  else if (pathname.includes("/account")) setCurrentRoute("account");
-}, [pathname]);
-
+    if (pathname.includes("/home")) setCurrentRoute("home");
+    else if (pathname.includes("/subscriptions"))
+      setCurrentRoute("subscriptions");
+    else if (pathname.includes("/tickets")) setCurrentRoute("tickets");
+    else if (pathname.includes("/account")) setCurrentRoute("account");
+  }, [pathname]);
 
   useEffect(() => {
     const id = scrollY.addListener(({ value }) => {
@@ -388,7 +388,10 @@ export default function ClientTabsLayout() {
           tabBarActiveTintColor: colors.tabActive,
           tabBarInactiveTintColor: colors.tabInactive,
           tabBarLabelStyle: styles.tabLabel,
-          tabBarItemStyle: styles.tabItem,
+          tabBarItemStyle: {
+            paddingTop: 4, // reduce this to move icon higher
+            paddingBottom: 2,
+          },
         }}
       >
         {/* Home Tab */}
@@ -396,8 +399,8 @@ export default function ClientTabsLayout() {
           name="home/index"
           options={{
             title: "Home",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="home" size={size} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name="home" size={focused ? 32 : 28} color={color} style={{ marginTop: -10 }} />
             ),
             tabBarLabel: ({ color, children, focused }) => (
               <CustomTabLabel color={color} focused={focused}>
@@ -418,8 +421,8 @@ export default function ClientTabsLayout() {
           name="subscriptions/index"
           options={{
             title: "Subscriptions",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="receipt" size={size} color={color} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name="receipt" size={focused ? 32 : 28} color={color}  style={{ marginTop: -10 }} />
             ),
             tabBarLabel: ({ color, children, focused }) => (
               <CustomTabLabel color={color} focused={focused}>
@@ -450,8 +453,8 @@ export default function ClientTabsLayout() {
           name="tickets/index"
           options={{
             title: "Tickets",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="ticket" size={size} color={color} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name="ticket" size={focused ? 32 : 28} color={color} style={{ marginTop: -10 }} />
             ),
             tabBarLabel: ({ color, children, focused }) => (
               <CustomTabLabel color={color} focused={focused}>
@@ -472,8 +475,8 @@ export default function ClientTabsLayout() {
           name="account/index"
           options={{
             title: "Profile",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="person" size={size} color={color} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name="person" size={focused ? 32 : 28} color={color}  style={{ marginTop: -10 }}/>
             ),
             tabBarLabel: ({ color, children, focused }) => (
               <CustomTabLabel color={color} focused={focused}>
@@ -493,7 +496,12 @@ export default function ClientTabsLayout() {
       {/* Loading Indicator */}
       {isNavigating && (
         <View style={styles.loadingOverlay}>
-          <View style={[styles.loadingContainer, {backgroundColor:colors.background}]}>
+          <View
+            style={[
+              styles.loadingContainer,
+              { backgroundColor: colors.background },
+            ]}
+          >
             <ActivityIndicator size="large" color={colors.loadingIndicator} />
             <Text style={[styles.loadingText, { color: colors.textLoading }]}>
               Loading...
@@ -589,7 +597,6 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 8,
     fontWeight: "700",
-    marginTop: 2,
     marginBottom: 10,
     textAlign: "center",
     width: "100%",
