@@ -23,6 +23,7 @@ import { useTheme } from "../../../../theme/ThemeContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { sharedScrollY } from "../../../../shared/sharedScroll";
+import CustomAlert from "../../../../components/CustomAlert";
 
 const { width } = Dimensions.get("window");
 
@@ -165,6 +166,14 @@ const Home = () => {
     }
   };
 
+  const [alertConfig, setAlertConfig] = useState({
+  visible: false,
+  title: "",
+  message: "",
+  type: "error",
+  onConfirm: null,
+});
+
   // Static promo images from assets
   const staticPromos = [
     {
@@ -220,62 +229,127 @@ const Home = () => {
   ];
 
   // Fetch all data from the single /api/app/home endpoint
- const fetchHomeData = async (isRefresh = false) => {
+const fetchHomeData = async (isRefresh = false) => {
+  if (!user?.branch?.subdomain) {
+    console.warn("User branch not loaded yet");
+    return;
+  }
+
+  const fetchWithTimeout = (url, options, timeout = 10000) =>
+    Promise.race([
+      fetch(url, options),
+      new Promise((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error("Server timeout. Please try again later.")
+            ),
+          timeout
+        )
+      ),
+    ]);
+
   try {
     if (!isRefresh) setLoadingBills(true);
     else setRefreshing(true);
 
     const token = await AsyncStorage.getItem("token");
-    if (!token) return;
 
-    // 🔐 IMPORTANT GUARD
-    if (!user?.branch?.subdomain) {
-      console.warn("User branch not loaded yet");
-      return;
+    if (!token) {
+      throw new Error("Authentication required.");
     }
 
     const subdomain = user.branch.subdomain;
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://${subdomain}.kazibufastnet.com/api/app/home`,
       {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: "application/json",
-          "Content-Type": "application/json",
         },
-      }
+      },
+      10000
     );
+
+    // 🔴 STATUS HANDLING
+
+    if (response.status === 401) {
+      await AsyncStorage.removeItem("token");
+
+      setAlertConfig({
+        visible: true,
+        title: "Session Expired",
+        message: "Your session has expired. Please log in again.",
+        type: "error",
+        onConfirm: () => {
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+          router.replace("/(auth)/login");
+        },
+      });
+
+      return;
+    }
+
+    if (response.status === 404) {
+      throw new Error("API endpoint not found.");
+    }
+
+    if (response.status >= 500) {
+      throw new Error(
+        "There is something wrong on our server. Please try again later."
+      );
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(errorText || "Failed to fetch home data");
+      throw new Error(errorText || "Failed to fetch home data.");
     }
 
     const data = await response.json();
 
-    // 🔔 Notifications
-    setUnreadNotifications(data?.notifications || 0);
+    // ✅ SAFE DATA
+    setUnreadNotifications(data?.notifications ?? 0);
+    setUserCredit(data?.user?.credit_points ?? 0);
+    setAnnouncements(
+      Array.isArray(data?.announcement) ? data.announcement : []
+    );
+    processBillingsData(
+      Array.isArray(data?.billings) ? data.billings : []
+    );
 
-    // 💳 Credits
-    setUserCredit(data?.user?.credit_points || 0);
-
-    // 📢 Announcements
-    setAnnouncements(Array.isArray(data?.announcement) ? data.announcement : []);
-
-    // 🧾 Billings
-    processBillingsData(Array.isArray(data?.billings) ? data.billings : []);
   } catch (err) {
-    console.error("Error fetching home data:", err);
-    if (!isRefresh) showMockData();
+    
+
+    let errorMessage = err.message;
+
+    if (err.message === "Network request failed") {
+      errorMessage =
+        "No internet connection. Please check your network and try again.";
+    }
+
+    if (!isRefresh) {
+      showMockData();
+    }
+
     setUpcomingBills([]);
+
+    // 🔥 USE CUSTOM ALERT FOR ALL ERRORS
+    setAlertConfig({
+      visible: true,
+      title: "Error",
+      message: errorMessage,
+      type: "error",
+      onConfirm: () =>
+        setAlertConfig((prev) => ({ ...prev, visible: false })),
+    });
+
   } finally {
     setLoadingBills(false);
     setRefreshing(false);
   }
 };
-
 
   // Process billings data from the API
   const processBillingsData = (billings) => {
@@ -341,7 +415,6 @@ const Home = () => {
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 7);
 
-    
     const mockBills = [
       {
         id: 1,
@@ -588,24 +661,27 @@ const Home = () => {
                     style={styles.quickActionCard}
                     onPress={() => handleRoutePress(action.route)}
                   >
-                    <View
-                      style={[
-                        styles.actionIconContainer,
-                      ]}
-                    >
+                    <View style={[styles.actionIconContainer]}>
                       <Image
                         source={action.icon}
                         style={[
                           styles.actionIcon,
                           {
                             tintColor:
-                              effectiveMode === "light" ? colors.primary : "#6dffe4",
+                              effectiveMode === "light"
+                                ? colors.primary
+                                : "#6dffe4",
                           },
                         ]}
                         resizeMode="contain"
                       />
                     </View>
-                    <Text style={[styles.actionTitle, { color: colors.quickActions }]}>
+                    <Text
+                      style={[
+                        styles.actionTitle,
+                        { color: colors.quickActions },
+                      ]}
+                    >
                       {action.title}
                     </Text>
                   </TouchableOpacity>
@@ -902,6 +978,8 @@ const Home = () => {
               )}
             </View>
           )}
+
+          <CustomAlert {...alertConfig} /> 
         </View>
 
         {/* Footer Spacer */}

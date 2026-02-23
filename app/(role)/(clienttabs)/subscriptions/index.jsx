@@ -116,6 +116,7 @@ const MySubscriptionsScreen = () => {
       textLight: "#B0B0B0",
     },
   };
+  
 
   const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
 
@@ -128,270 +129,152 @@ const MySubscriptionsScreen = () => {
     }
   };
 
-  const fetchSubscriptionData = async () => {
-    console.log("🔄 === START FETCH SUBSCRIPTIONS ===");
-    console.log("📋 User Info:", {
-      exists: !!user,
-      id: user?.id,
-      email: user?.email,
-      branchExists: !!user?.branch,
-      subdomain: user?.branch?.subdomain || "NONE",
+ const fetchSubscriptionData = async () => {
+  console.log("🔄 === START FETCH SUBSCRIPTIONS ===");
+
+  try {
+    setLoading(true);
+
+    const token = await getToken();
+
+    if (!token) {
+      setAlertConfig({
+        visible: true,
+        title: "Session Expired",
+        message: "Please login again.",
+        type: "error",
+        onConfirm: () => {
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+          router.replace("/(auth)/login");
+        },
+      });
+      return;
+    }
+
+    if (!user?.branch?.subdomain) {
+      throw new Error("Branch information missing.");
+    }
+
+    const subdomain = user.branch.subdomain;
+    const url = `https://${subdomain}.kazibufastnet.com/api/app/subscriptions`;
+
+    // Timeout wrapper
+    const fetchWithTimeout = (url, options, timeout = 15000) =>
+      Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error("Server timeout. Please try again later.")
+              ),
+            timeout
+          )
+        ),
+      ]);
+
+    const response = await fetchWithTimeout(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
     });
 
-    try {
-      // 1. Get token
-      const token = await getToken();
-      console.log(
-        "🔑 Token Status:",
-        token ? `Exists (${token.length} chars)` : "MISSING",
-      );
+    // ============================
+    // STATUS HANDLING
+    // ============================
 
-      if (!token) {
-        console.error("❌ No authentication token found");
-        setError("Please login again");
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
+    if (response.status === 401) {
+      await AsyncStorage.removeItem("token");
 
-      // 2. Check subdomain
-      if (!user?.branch?.subdomain) {
-        console.error("❌ No subdomain in user branch");
-        console.log("📊 Full user object:", JSON.stringify(user, null, 2));
-        setError("Branch information is missing. Please contact support.");
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
-
-      // 3. Prepare API URL
-      const subdomain = user.branch.subdomain;
-      const url = `https://${subdomain}.kazibufastnet.com/api/app/subscriptions`;
-      console.log("🌐 API URL:", url);
-
-      // 4. Create timeout mechanism
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        console.warn("⏰ Request timeout - aborting");
-        controller.abort();
-      }, 30000); // 30 seconds timeout
-
-      // 5. Make API request
-      console.log("📤 Sending request...");
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
+      setAlertConfig({
+        visible: true,
+        title: "Session Expired",
+        message: "Your session has expired. Please login again.",
+        type: "error",
+        onConfirm: () => {
+          setAlertConfig((prev) => ({ ...prev, visible: false }));
+          router.replace("/(auth)/login");
         },
-        signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
-      console.log("📥 Response received:", {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries()),
-      });
-
-      // 6. Handle non-OK responses
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("❌ Server error response:", errorText.substring(0, 500));
-
-        let errorMessage = `Server error: ${response.status}`;
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.message || errorData.error || errorMessage;
-        } catch {
-          // Not JSON, use text as is
-          if (
-            errorText.includes("Unauthorized") ||
-            errorText.includes("Invalid token")
-          ) {
-            errorMessage = "Your session has expired. Please login again.";
-          }
-        }
-
-        throw new Error(errorMessage);
-      }
-
-      // 7. Parse response
-      const responseText = await response.text();
-      console.log("📄 Response text length:", responseText.length);
-      console.log(
-        "📄 Response preview:",
-        responseText.substring(0, 300) + "...",
-      );
-
-      if (!responseText.trim()) {
-        console.error("❌ Empty response from server");
-        throw new Error("Server returned empty response");
-      }
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-        console.log("✅ JSON parsed successfully");
-        console.log("📊 Data type:", typeof data);
-        console.log("📊 Data keys:", Object.keys(data));
-      } catch (parseError) {
-        console.error("❌ JSON parse error:", parseError);
-        console.error("Raw response:", responseText);
-        throw new Error("Server returned invalid data format");
-      }
-
-      // 8. Check for API-level errors in response
-      if (data.error) {
-        console.error("❌ API error field:", data.error);
-        throw new Error(data.error);
-      }
-
-      if (data.message && data.message.toLowerCase().includes("error")) {
-        console.error("❌ API error message:", data.message);
-        throw new Error(data.message);
-      }
-
-      // 9. Extract subscriptions from multiple possible structures
-      console.log("🔍 Searching for subscriptions in response...");
-      let subscriptionsArray = [];
-      let foundIn = null;
-
-      // Try all possible structures
-      if (Array.isArray(data)) {
-        // Case 1: Response is directly an array
-        subscriptionsArray = data;
-        foundIn = "root array";
-      } else if (Array.isArray(data.subscriptions)) {
-        // Case 2: data.subscriptions array
-        subscriptionsArray = data.subscriptions;
-        foundIn = "data.subscriptions";
-      } else if (Array.isArray(data.subscription)) {
-        // Case 3: data.subscription array
-        subscriptionsArray = data.subscription;
-        foundIn = "data.subscription";
-      } else if (Array.isArray(data.data?.subscriptions)) {
-        // Case 4: data.data.subscriptions array
-        subscriptionsArray = data.data.subscriptions;
-        foundIn = "data.data.subscriptions";
-      } else if (Array.isArray(data.data?.subscription)) {
-        // Case 5: data.data.subscription array
-        subscriptionsArray = data.data.subscription;
-        foundIn = "data.data.subscription";
-      } else if (
-        data.subscriptions?.data &&
-        Array.isArray(data.subscriptions.data)
-      ) {
-        // Case 6: data.subscriptions.data array
-        subscriptionsArray = data.subscriptions.data;
-        foundIn = "data.subscriptions.data";
-      } else if (
-        data.subscription?.data &&
-        Array.isArray(data.subscription.data)
-      ) {
-        // Case 7: data.subscription.data array
-        subscriptionsArray = data.subscription.data;
-        foundIn = "data.subscription.data";
-      } else if (Array.isArray(data.data)) {
-        // Case 8: data.data array
-        subscriptionsArray = data.data;
-        foundIn = "data.data";
-      } else if (data.subscriptions && typeof data.subscriptions === "object") {
-        // Case 9: Single subscription object in data.subscriptions
-        subscriptionsArray = [data.subscriptions];
-        foundIn = "data.subscriptions (single object)";
-      } else if (data.subscription && typeof data.subscription === "object") {
-        // Case 10: Single subscription object in data.subscription
-        subscriptionsArray = [data.subscription];
-        foundIn = "data.subscription (single object)";
-      } else if (
-        data.data &&
-        typeof data.data === "object" &&
-        !Array.isArray(data.data)
-      ) {
-        // Case 11: Single subscription in data.data
-        subscriptionsArray = [data.data];
-        foundIn = "data.data (single object)";
-      }
-
-      console.log(`📍 Found subscriptions in: ${foundIn || "NOT FOUND"}`);
-      console.log(`📦 Subscription count: ${subscriptionsArray.length}`);
-
-      if (subscriptionsArray.length > 0) {
-        console.log(
-          "📋 First subscription sample:",
-          JSON.stringify(subscriptionsArray[0], null, 2),
-        );
-      }
-
-      // 10. Validate subscription structure
-      const validSubscriptions = subscriptionsArray.filter((sub) => {
-        const hasId = sub.id || sub.subscription_id;
-        if (!hasId) {
-          console.warn("⚠️ Invalid subscription item (no ID):", sub);
-        }
-        return hasId;
-      });
-
-      console.log(
-        `✅ Valid subscriptions: ${validSubscriptions.length}/${subscriptionsArray.length}`,
-      );
-
-      // 11. Set state
-      if (validSubscriptions.length > 0) {
-        setSubscriptions(validSubscriptions);
-        setError(null);
-        console.log("🎉 Subscriptions loaded successfully");
-      } else {
-        console.log("ℹ️ No valid subscriptions found");
-        setSubscriptions([]);
-        // Only show error if we expected subscriptions but got none
-        if (subscriptionsArray.length === 0 && foundIn) {
-          setError("No active subscriptions found");
-        }
-      }
-    } catch (err) {
-      console.error("💥 FETCH ERROR:", {
-        name: err.name,
-        message: err.message,
-        stack: err.stack,
-      });
-
-      // User-friendly error messages
-      if (err.name === "AbortError") {
-        setError(
-          "Request took too long. Please check your internet connection and try again.",
-        );
-      } else if (err.message.includes("Network request failed")) {
-        setError(
-          "Cannot connect to server. Please check your internet connection.",
-        );
-      } else if (
-        err.message.includes("Unauthorized") ||
-        err.message.includes("token")
-      ) {
-        setError("Session expired. Please login again.");
-      } else if (err.message.includes("JSON")) {
-        setError("Server returned invalid data. Please try again later.");
-      } else {
-        setError(err.message || "Failed to load subscriptions");
-      }
-    } finally {
-      console.log("🏁 === FETCH COMPLETE ===");
-      console.log("📊 Final state:", {
-        loading: false,
-        refreshing: false,
-        subscriptionCount: subscriptions.length,
-        error: error,
-      });
-
-      setLoading(false);
-      setRefreshing(false);
+      return;
     }
-  };
+
+    if (response.status === 404) {
+      throw new Error("API endpoint not found.");
+      
+    }
+
+    if (response.status >= 500) {
+      throw new Error(
+        "There is something wrong on our server. Please try again later."
+      );
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Failed to fetch subscriptions.");
+    }
+    setSubscriptions([]);
+
+    const data = await response.json();
+
+    // ============================
+    // SAFE SUBSCRIPTION EXTRACTION
+    // ============================
+
+    let subscriptionsArray = [];
+
+    if (Array.isArray(data)) {
+      subscriptionsArray = data;
+    } else if (Array.isArray(data.subscriptions)) {
+      subscriptionsArray = data.subscriptions;
+    } else if (Array.isArray(data.subscription)) {
+      subscriptionsArray = data.subscription;
+    } else if (Array.isArray(data.data)) {
+      subscriptionsArray = data.data;
+    }
+
+    const validSubscriptions = subscriptionsArray.filter(
+      (sub) => sub?.id || sub?.subscription_id 
+    );
+
+    setSubscriptions(validSubscriptions);
+    setError(null);
+
+  } catch (err) {
+
+    let errorMessage = err.message;
+
+    if (err.message === "Network request failed") {
+      errorMessage =
+        "No internet connection. Please check your network.";
+    }
+
+    if (err.name === "AbortError") {
+      errorMessage =
+        "Request timeout. Please check your internet and try again.";
+    }
+
+    setSubscriptions([]);
+
+    setAlertConfig({
+      visible: true,
+      title: "Error",
+      message: errorMessage,
+      type: "error",
+      onConfirm: () =>
+        setAlertConfig((prev) => ({ ...prev, visible: false })),
+    });
+
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+    console.log("🏁 === FETCH COMPLETE ===");
+  }
+};
 
   useEffect(() => {
     console.log("👤 User state changed:", {
@@ -1490,7 +1373,7 @@ const MySubscriptionsScreen = () => {
           </Text>
 
           {subscriptions.length === 0 ? (
-            <View style={styles.noDataContainer}>
+            <View style={[ styles.noDataContainer, { backgroundColor: colors.background } ]}>
               <View
                 style={[
                   styles.noDataIconContainer,

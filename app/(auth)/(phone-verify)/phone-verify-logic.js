@@ -130,7 +130,7 @@ export default function usePhoneVerifyLogic() {
       setAlertConfig({
         visible: true,
         title: "Error",
-        message: e.message || "Something went wrong",
+        message:"Server endpoint not found. Please contact support.",
         type: "error",
       });
     } finally {

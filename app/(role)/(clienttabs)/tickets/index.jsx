@@ -28,8 +28,6 @@ import CustomAlert from "../../../../components/CustomAlert";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// Correct API base URLs
-const API_BASE_URL = "https://staging.kazibufastnet.com/api/app/tickets";
 
 // Helper function for user-specific keys
 const getUserTicketsKey = (userId) => `kazi_support_tickets_${userId}`;
@@ -185,9 +183,6 @@ const Ticket = () => {
       // Try multiple URL patterns
       const possibleUrls = [
         `https://${user.branch.subdomain}.kazibufastnet.com/storage/${cleanUri}`,
-        `https://${user.branch.subdomain}.kazibufastnet.com/uploads/${cleanUri}`,
-        `https://${user.branch.subdomain}.kazibufastnet.com/public/${cleanUri}`,
-        `https://${user.branch.subdomain}.kazibufastnet.com/${cleanUri}`,
         // Try without the "causes/" prefix if already in URI
         cleanUri.startsWith("causes/")
           ? `https://${user.branch.subdomain}.kazibufastnet.com/${cleanUri.replace("causes/", "")}`
@@ -277,24 +272,10 @@ const Ticket = () => {
       // Ensure it's a string (some backends prefer strings)
       idToSend = idToSend.toString();
 
-      // ============ TRY DIFFERENT ENDPOINT PATTERNS ============
+      // ============ TRY DIFFERENTENDPOINT PATTERNS ============
       const possibleEndpoints = [
-        // App-specific endpoints (most likely)
-        `https://${subdomain}.kazibufastnet.com/api/app/tickets/${idToSend}`,
         `https://${subdomain}.kazibufastnet.com/api/app/tickets/view/${idToSend}`,
-        `https://${subdomain}.kazibufastnet.com/api/app/tickets/show/${idToSend}`,
-
-        // Generic endpoints
-        `https://${subdomain}.kazibufastnet.com/api/tickets/${idToSend}`,
-        `https://${subdomain}.kazibufastnet.com/api/tickets/view/${idToSend}`,
-        `https://${subdomain}.kazibufastnet.com/api/tickets/show/${idToSend}`,
-
-        // User-specific endpoints
-        `https://${subdomain}.kazibufastnet.com/api/user/tickets/${idToSend}`,
       ];
-
-      console.log("🔍 Trying to view ticket with ID:", idToSend);
-      console.log("Available endpoints to try:", possibleEndpoints);
 
       let ticketData = null;
       let successfulEndpoint = "";

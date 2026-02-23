@@ -20,8 +20,6 @@ import CustomAlert from "../../../../components/CustomAlert";
 
 // API endpoints
 
-const API_PROFILE_URL = "https://staging.kazibufastnet.com/api/app/profile";
-
 function Profile() {
   const router = useRouter();
   const user = useUserStore((state) => state.user);
