@@ -29,6 +29,127 @@ import CustomAlert from "../../../../components/CustomAlert";
 
 const { width, height } = Dimensions.get("window");
 
+// Skeleton Loading Component
+const SkeletonSubscriptionCard = ({ colors, effectiveMode }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  const SkeletonItem = ({ width, height, style }) => (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: colors.textLight + '20',
+          borderRadius: 4,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View style={[styles.subscriptionCardContainer, { marginBottom: 16 }]}>
+      <View
+        style={[
+          styles.subscriptionCard,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            shadowColor: effectiveMode === "dark" ? "transparent" : "#000",
+          },
+        ]}
+      >
+        {/* Card Header Skeleton */}
+        <View style={styles.cardHeader}>
+          <View style={styles.accountInfo}>
+            <SkeletonItem width={44} height={44} style={{ borderRadius: 22 }} />
+            <View style={{ marginLeft: 12 }}>
+              <SkeletonItem width={80} height={12} />
+              <SkeletonItem width={120} height={16} style={{ marginTop: 6 }} />
+            </View>
+          </View>
+          <SkeletonItem width={70} height={24} style={{ borderRadius: 12 }} />
+        </View>
+
+        {/* Card Body Skeleton */}
+        <View style={styles.cardBody}>
+          {/* Plan Info Skeleton */}
+          <View style={styles.infoRow}>
+            <SkeletonItem width={36} height={36} style={{ borderRadius: 18 }} />
+            <View style={styles.infoContent}>
+              <SkeletonItem width={40} height={12} />
+              <SkeletonItem width={100} height={14} style={{ marginTop: 6 }} />
+            </View>
+          </View>
+
+          {/* Billing Section Skeleton */}
+          <View style={[styles.currentBillingContainer, { borderWidth: 1, borderColor: colors.border }]}>
+            <View style={styles.billingHeader}>
+              <SkeletonItem width={100} height={14} />
+              <SkeletonItem width={60} height={14} />
+            </View>
+
+            <View style={styles.billingDetails}>
+              <View style={styles.billingAmountContainer}>
+                <SkeletonItem width={60} height={12} />
+                <SkeletonItem width={80} height={20} style={{ marginTop: 6 }} />
+              </View>
+              <View style={styles.billingDateContainer}>
+                <SkeletonItem width={50} height={12} />
+                <SkeletonItem width={70} height={14} style={{ marginTop: 6 }} />
+              </View>
+            </View>
+
+            {/* Payment Buttons Skeleton */}
+            <View style={styles.paymentButtonsContainer}>
+              <SkeletonItem width="100%" height={44} style={{ borderRadius: 10 }} />
+              <SkeletonItem width="100%" height={44} style={{ borderRadius: 10 }} />
+            </View>
+          </View>
+        </View>
+
+        {/* Card Footer Skeleton */}
+        <View style={[styles.cardFooter, { borderTopColor: colors.border }]}>
+          <View style={styles.footerButton}>
+            <SkeletonItem width={32} height={32} style={{ borderRadius: 16 }} />
+            <SkeletonItem width={80} height={12} style={{ marginLeft: 8 }} />
+          </View>
+          <View style={styles.footerButton}>
+            <SkeletonItem width={32} height={32} style={{ borderRadius: 16 }} />
+            <SkeletonItem width={100} height={12} style={{ marginLeft: 8 }} />
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+};
+
 const MySubscriptionsScreen = () => {
   const router = useRouter();
   const user = useUserStore((state) => state.user);
@@ -116,7 +237,6 @@ const MySubscriptionsScreen = () => {
       textLight: "#B0B0B0",
     },
   };
-  
 
   const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
 
@@ -129,152 +249,159 @@ const MySubscriptionsScreen = () => {
     }
   };
 
- const fetchSubscriptionData = async () => {
-  console.log("🔄 === START FETCH SUBSCRIPTIONS ===");
+  const fetchSubscriptionData = async () => {
+    console.log("🔄 === START FETCH SUBSCRIPTIONS ===");
 
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const token = await getToken();
+      const token = await getToken();
 
-    if (!token) {
-      setAlertConfig({
-        visible: true,
-        title: "Session Expired",
-        message: "Please login again.",
-        type: "error",
-        onConfirm: () => {
-          setAlertConfig((prev) => ({ ...prev, visible: false }));
-          router.replace("/(auth)/login");
-        },
-      });
-      return;
-    }
+      if (!token) {
+        setAlertConfig({
+          visible: true,
+          title: "Session Expired",
+          message: "Please login again.",
+          type: "error",
+          onConfirm: () => {
+            setAlertConfig((prev) => ({ ...prev, visible: false }));
+            router.replace("/(auth)/login");
+          },
+        });
+        return;
+      }
 
-    if (!user?.branch?.subdomain) {
-      throw new Error("Branch information missing.");
-    }
+      if (!user?.branch?.subdomain) {
+        throw new Error("Branch information missing.");
+      }
 
-    const subdomain = user.branch.subdomain;
-    const url = `https://${subdomain}.kazibufastnet.com/api/app/subscriptions`;
+      const subdomain = user.branch.subdomain;
+      const url = `https://${subdomain}.kazibufastnet.com/api/app/subscriptions`;
 
-    // Timeout wrapper
-    const fetchWithTimeout = (url, options, timeout = 15000) =>
-      Promise.race([
-        fetch(url, options),
-        new Promise((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new Error("Server timeout. Please try again later.")
-              ),
-            timeout
-          )
-        ),
-      ]);
+      // Timeout wrapper
+      const fetchWithTimeout = (url, options, timeout = 15000) =>
+        Promise.race([
+          fetch(url, options),
+          new Promise((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error("Server timeout. Please try again later.")
+                ),
+              timeout
+            )
+          ),
+        ]);
 
-    const response = await fetchWithTimeout(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-    });
-
-    // ============================
-    // STATUS HANDLING
-    // ============================
-
-    if (response.status === 401) {
-      await AsyncStorage.removeItem("token");
-
-      setAlertConfig({
-        visible: true,
-        title: "Session Expired",
-        message: "Your session has expired. Please login again.",
-        type: "error",
-        onConfirm: () => {
-          setAlertConfig((prev) => ({ ...prev, visible: false }));
-          router.replace("/(auth)/login");
+      const response = await fetchWithTimeout(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
         },
       });
 
-      return;
-    }
+      // ============================
+      // STATUS HANDLING
+      // ============================
 
-    if (response.status === 404) {
-      throw new Error("API endpoint not found.");
-      
-    }
+      if (response.status === 401) {
+        await AsyncStorage.removeItem("token");
 
-    if (response.status >= 500) {
-      throw new Error(
-        "There is something wrong on our server. Please try again later."
+        setAlertConfig({
+          visible: true,
+          title: "Session Expired",
+          message: "Your session has expired. Please login again.",
+          type: "error",
+          onConfirm: () => {
+            setAlertConfig((prev) => ({ ...prev, visible: false }));
+            router.replace("/(auth)/login");
+          },
+        });
+
+        return;
+      }
+
+      if (response.status === 404) {
+        throw new Error("API endpoint not found.");
+      }
+
+      if (response.status >= 500) {
+        throw new Error(
+          "There is something wrong on our server. Please try again later."
+        );
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "Failed to fetch subscriptions.");
+      }
+
+      const data = await response.json();
+
+      // ============================
+      // SAFE SUBSCRIPTION EXTRACTION
+      // ============================
+
+      let subscriptionsArray = [];
+
+      if (Array.isArray(data)) {
+        subscriptionsArray = data;
+      } else if (Array.isArray(data.subscriptions)) {
+        subscriptionsArray = data.subscriptions;
+      } else if (Array.isArray(data.subscription)) {
+        subscriptionsArray = data.subscription;
+      } else if (Array.isArray(data.data)) {
+        subscriptionsArray = data.data;
+      }
+
+      const validSubscriptions = subscriptionsArray.filter(
+        (sub) => sub?.id || sub?.subscription_id
       );
+
+      setSubscriptions(validSubscriptions);
+      setError(null);
+    } catch (err) {
+      let errorMessage = err.message;
+
+      if (err.message === "Network request failed") {
+        errorMessage =
+          "No internet connection. Please check your network.";
+      }
+
+      if (err.name === "AbortError") {
+        errorMessage =
+          "Request timeout. Please check your internet and try again.";
+      }
+
+      setSubscriptions([]);
+      setError(errorMessage);
+
+    
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      console.log("🏁 === FETCH COMPLETE ===");
     }
+  };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || "Failed to fetch subscriptions.");
-    }
-    setSubscriptions([]);
-
-    const data = await response.json();
-
-    // ============================
-    // SAFE SUBSCRIPTION EXTRACTION
-    // ============================
-
-    let subscriptionsArray = [];
-
-    if (Array.isArray(data)) {
-      subscriptionsArray = data;
-    } else if (Array.isArray(data.subscriptions)) {
-      subscriptionsArray = data.subscriptions;
-    } else if (Array.isArray(data.subscription)) {
-      subscriptionsArray = data.subscription;
-    } else if (Array.isArray(data.data)) {
-      subscriptionsArray = data.data;
-    }
-
-    const validSubscriptions = subscriptionsArray.filter(
-      (sub) => sub?.id || sub?.subscription_id 
+  // Helper function to render skeleton cards based on subscription count
+  const renderSkeletonCards = () => {
+    // Use the number of existing subscriptions as a base, or show 2 if no subscriptions
+    const skeletonCount = subscriptions.length > 0 ? subscriptions.length : 2;
+    
+    return (
+      <>
+        {Array(skeletonCount).fill(0).map((_, index) => (
+          <SkeletonSubscriptionCard 
+            key={`skeleton-${index}`} 
+            colors={colors} 
+            effectiveMode={effectiveMode}
+          />
+        ))}
+      </>
     );
-
-    setSubscriptions(validSubscriptions);
-    setError(null);
-
-  } catch (err) {
-
-    let errorMessage = err.message;
-
-    if (err.message === "Network request failed") {
-      errorMessage =
-        "No internet connection. Please check your network.";
-    }
-
-    if (err.name === "AbortError") {
-      errorMessage =
-        "Request timeout. Please check your internet and try again.";
-    }
-
-    setSubscriptions([]);
-
-    setAlertConfig({
-      visible: true,
-      title: "Error",
-      message: errorMessage,
-      type: "error",
-      onConfirm: () =>
-        setAlertConfig((prev) => ({ ...prev, visible: false })),
-    });
-
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-    console.log("🏁 === FETCH COMPLETE ===");
-  }
-};
+  };
 
   useEffect(() => {
     console.log("👤 User state changed:", {
@@ -1277,15 +1404,56 @@ const MySubscriptionsScreen = () => {
     );
   };
 
-  if (loading && !refreshing) {
+  // Show skeleton on initial load OR during pull-to-refresh
+  if (loading || refreshing) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textLight }]}>
-            Loading subscriptions...
-          </Text>
+        {/* Header with Image Background */}
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor="transparent"
+          translucent={true}
+        />
+
+        {/* Background Image Container */}
+        <View style={styles.imageContainer}>
+          <ImageBackground
+            source={require("../../../../assets/images/subscriptionbg.png")}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+          >
+            {/* Optional dark overlay for better text readability */}
+            <View style={styles.imageOverlay} />
+          </ImageBackground>
         </View>
+
+        {/* Content with skeleton */}
+        <ScrollView
+          style={[styles.scrollView, { backgroundColor: colors.background }]}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+        >
+          {/* Section Header */}
+          <View style={styles.section}>
+            <Text style={[styles.summaryTitle, { color: colors.text }]}>
+              My Subscriptions
+            </Text>
+            <Text style={[styles.summarySubtitle, { color: colors.text }]}>
+              {refreshing ? "Refreshing..." : "Loading subscriptions..."}
+            </Text>
+          </View>
+
+          {/* Skeleton Cards - Dynamic based on existing subscriptions count */}
+          {renderSkeletonCards()}
+        </ScrollView>
       </View>
     );
   }
@@ -1293,6 +1461,23 @@ const MySubscriptionsScreen = () => {
   if (error) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor="transparent"
+          translucent={true}
+        />
+
+        {/* Background Image Container */}
+        <View style={styles.imageContainer}>
+          <ImageBackground
+            source={require("../../../../assets/images/subscriptionbg.png")}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+          >
+            <View style={styles.imageOverlay} />
+          </ImageBackground>
+        </View>
+
         <View style={styles.errorContainer}>
           <View
             style={[
@@ -1361,12 +1546,11 @@ const MySubscriptionsScreen = () => {
           { useNativeDriver: false },
         )}
       >
-
         {/* Subscriptions List */}
         <View style={styles.section}>
           <Text style={[styles.summaryTitle, { color: colors.text }]}>
-                My Subscriptions
-              </Text>
+            My Subscriptions
+          </Text>
           <Text style={[styles.summarySubtitle, { color: colors.text }]}>
             {subscriptions.length} active subscription
             {subscriptions.length !== 1 ? "s" : ""}

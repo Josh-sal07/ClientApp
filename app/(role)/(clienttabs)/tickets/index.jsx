@@ -28,6 +28,92 @@ import CustomAlert from "../../../../components/CustomAlert";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+// Skeleton Loading Component for Ticket Card
+const SkeletonTicketCard = ({ colors }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  const SkeletonItem = ({ width, height, style }) => (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: colors.textLight + '20',
+          borderRadius: 4,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View
+      style={[
+        styles.ticketCard,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderLeftWidth: 4,
+          borderLeftColor: colors.textLight + '20',
+          marginBottom: 12,
+        },
+      ]}
+    >
+      {/* Header */}
+      <View style={styles.ticketHeader}>
+        <View style={styles.ticketIdContainer}>
+          <SkeletonItem width={80} height={16} />
+        </View>
+        <SkeletonItem width={70} height={24} style={{ borderRadius: 12 }} />
+      </View>
+
+      {/* Subject */}
+      <SkeletonItem width="100%" height={20} style={{ marginVertical: 8 }} />
+      <SkeletonItem width="70%" height={20} style={{ marginBottom: 12 }} />
+
+      {/* Footer */}
+      <View style={[styles.ticketFooter, { borderTopColor: colors.border + '30', borderTopWidth: 1 }]}>
+        <View style={styles.footerLeft}>
+          <View style={styles.dateContainer}>
+            <SkeletonItem width={12} height={12} style={{ borderRadius: 6 }} />
+            <SkeletonItem width={80} height={12} style={{ marginLeft: 4 }} />
+          </View>
+          <SkeletonItem width={60} height={20} style={{ borderRadius: 6 }} />
+        </View>
+        <View style={styles.footerRight}>
+          <SkeletonItem width={40} height={12} />
+          <SkeletonItem width={16} height={16} style={{ borderRadius: 8 }} />
+        </View>
+      </View>
+    </View>
+  );
+};
 
 // Helper function for user-specific keys
 const getUserTicketsKey = (userId) => `kazi_support_tickets_${userId}`;
@@ -131,6 +217,17 @@ const Ticket = () => {
     in_progress: 0,
     submitted: 0,
   });
+
+  // Helper function to render skeleton cards
+  const renderSkeletonCards = () => {
+    return (
+      <>
+        {[1, 2, 3].map((index) => (
+          <SkeletonTicketCard key={`skeleton-${index}`} colors={colors} />
+        ))}
+      </>
+    );
+  };
 
   const normalizeStatusForUser = (status) => {
     if (!status) return "submitted";
@@ -1156,11 +1253,8 @@ const Ticket = () => {
             </View>
 
             {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={[styles.loadingText, { color: colors.textLight }]}>
-                  Loading tickets...
-                </Text>
+              <View>
+                {renderSkeletonCards()}
               </View>
             ) : filteredTickets.length === 0 ? (
               renderEmptyState()

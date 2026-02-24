@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -10,6 +10,7 @@ import {
   StatusBar,
   RefreshControl,
   useColorScheme,
+  Animated,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setToken } from "../../../../store/token";
@@ -17,6 +18,173 @@ import { useUserStore } from "../../../../store/user";
 import { useTheme } from "../../../../theme/ThemeContext";
 import axios from "axios";
 import CustomAlert from "../../../../components/CustomAlert";
+
+// Skeleton Loading Components
+const SkeletonProfileHeader = ({ colors }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  const SkeletonItem = ({ width, height, style }) => (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: colors.textLight + '30',
+          borderRadius: 4,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View style={[styles.profileHeader, { backgroundColor: colors.primary }]}>
+      <View style={styles.nameContainer}>
+        <SkeletonItem width={150} height={20} style={{ marginBottom: 8 }} />
+        <SkeletonItem width={120} height={16} />
+      </View>
+    </View>
+  );
+};
+
+const SkeletonMenuItem = ({ colors, hasBorder }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  const SkeletonItem = ({ width, height, style }) => (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: colors.textLight + '20',
+          borderRadius: 4,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View
+      style={[
+        styles.menuItem,
+        hasBorder && {
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        },
+      ]}
+    >
+      <View style={styles.menuItemContent}>
+        <SkeletonItem width={22} height={22} style={{ marginRight: 16 }} />
+        <SkeletonItem width={120} height={18} />
+      </View>
+      <SkeletonItem width={18} height={18} />
+    </View>
+  );
+};
+
+const SkeletonLogoutButton = ({ colors }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  return (
+    <View style={styles.logoutContainer}>
+      <Animated.View
+        style={[
+          styles.logoutButton,
+          {
+            backgroundColor: colors.danger + '10',
+            borderColor: colors.danger + '30',
+            opacity,
+          },
+        ]}
+      >
+        <View style={styles.logoutButtonContent}>
+          <Ionicons name="log-out-outline" size={20} color={colors.danger + '80'} />
+          <Text style={[styles.logoutText, { color: colors.danger + '80' }]}>
+            LOGOUT
+          </Text>
+        </View>
+      </Animated.View>
+    </View>
+  );
+};
 
 // API endpoints
 
@@ -111,7 +279,7 @@ function Profile() {
       }
 
       const subdomain = user.branch.subdomain;
-      const url = `https://${subdomain}.kazibufastnet.com/api/app/profile`;
+      const url = `https://${subdomain}.kazibufastnet.com/api/app/profile `;
       console.log("Request URL:", url);
 
       const response = await axios.get(url, {
@@ -208,12 +376,12 @@ function Profile() {
           type: "error",
         });
       } else if (error.message?.includes("Network Error")) {
-        setAlertConfig({
-          visible: true,
-          title: "Network Error",
-          message: "Cannot connect to server. Please check your connection.",
-          type: "error",
-        });
+        // setAlertConfig({
+        //   visible: true,
+        //   title: "Network Error",
+        //   message: "Cannot connect to server. Please check your connection.",
+        //   type: "error",
+        // });
       } else {
         setAlertConfig({
           visible: true,
@@ -339,6 +507,66 @@ function Profile() {
 
   // Get mobile number from profile data or user store
   const mobileNumber = user?.mobile_number;
+
+  // Show skeleton loading on initial load OR during refresh
+  if (loading || refreshing) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor="transparent"
+          translucent={true}
+        />
+
+        {/* Skeleton Profile Header */}
+        <SkeletonProfileHeader colors={colors} />
+
+        {/* Skeleton Menu Items */}
+        <ScrollView
+          style={styles.menuContainer}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[effectiveMode === "dark" ? "#FFFFFF" : "#333333"]}
+              tintColor={effectiveMode === "dark" ? "#FFFFFF" : "#333333"}
+              titleColor={colors.textLight}
+            />
+          }
+        >
+          {/* Menu Items Card Container */}
+          <View
+            style={[
+              styles.menuCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                shadowColor: effectiveMode === "dark" ? "#000" : "#000",
+              },
+            ]}
+          >
+            {menuItems.map((item, index) => (
+              <SkeletonMenuItem
+                key={`skeleton-${item.id}`}
+                colors={colors}
+                hasBorder={index !== menuItems.length - 1}
+              />
+            ))}
+          </View>
+
+          {/* Spacer before logout button */}
+          <View style={styles.spacer} />
+
+          {/* Skeleton Logout Button */}
+          <SkeletonLogoutButton colors={colors} />
+
+          {/* Bottom padding */}
+          <View style={styles.bottomPadding} />
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

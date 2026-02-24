@@ -1,5 +1,6 @@
 import { Stack, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
+import { View, Text } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SplashScreen from "expo-splash-screen";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -22,6 +23,7 @@ export default function RootLayout() {
   const [showSplash, setShowSplash] = useState(!splashShown);
   const isUnlocked = useUserStore((s) => s.isUnlocked);
   const hasNavigated = useRef(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   // ✅ CONDITIONAL SESSION TIMEOUT - Only enabled when authenticated
   const { expired, setExpired } = useSessionTimeout({
@@ -34,6 +36,28 @@ export default function RootLayout() {
       checkAuth();
     }
   }, [showSplash]);
+
+  const checkConnection = async () => {
+    try {
+      await fetch("https://staging.kazibufastnet.com", {
+        method: "HEAD",
+      });
+
+      setIsOffline(false);
+    } catch (error) {
+      setIsOffline(true);
+    }
+  };
+
+  useEffect(() => {
+    // First check
+    checkConnection();
+
+    // Infinite checking every 5 seconds
+    const interval = setInterval(checkConnection, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const checkAuth = async () => {
     if (hasNavigated.current) return;
@@ -101,12 +125,72 @@ export default function RootLayout() {
     <ThemeProvider>
       <Stack screenOptions={{ headerShown: false }} />
 
-      {/* ✅ CUSTOM SESSION ALERT - Only shows when authenticated */}
       {isUnlocked && (
         <SessionExpiredModal
           visible={expired}
           onConfirm={handleSessionExpired}
         />
+      )}
+
+      {/* 🔴 OFFLINE OVERLAY */}
+      {isOffline && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+          }}
+          pointerEvents="auto"
+        >
+          <View
+            style={{
+              width: "85%",
+              backgroundColor: "#1E1E1E",
+              padding: 25,
+              borderRadius: 16,
+              alignItems: "center",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 20,
+                color: "#fff",
+                fontWeight: "600",
+                marginBottom: 10,
+              }}
+            >
+              No Internet Connection
+            </Text>
+
+            <Text
+              style={{
+                fontSize: 14,
+                color: "#aaa",
+                textAlign: "center",
+                marginBottom: 20,
+              }}
+            >
+              Please check your connection and try again.
+            </Text>
+
+            <Text
+              onPress={checkConnection}
+              style={{
+                color: "#21C7B9",
+                fontWeight: "600",
+                fontSize: 16,
+              }}
+            >
+              Retry
+            </Text>
+          </View>
+        </View>
       )}
     </ThemeProvider>
   );

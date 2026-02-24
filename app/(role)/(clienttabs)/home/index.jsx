@@ -24,6 +24,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { sharedScrollY } from "../../../../shared/sharedScroll";
 import CustomAlert from "../../../../components/CustomAlert";
+import NetInfo from "@react-native-community/netinfo";
 
 const { width } = Dimensions.get("window");
 
@@ -31,6 +32,400 @@ const scaleSize = (size) => {
   const baseWidth = 375;
   const scale = width / baseWidth;
   return Math.round(size * Math.min(scale, 1.2));
+};
+
+// Skeleton Components
+const SkeletonCreditHeader = ({ colors }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  const SkeletonItem = ({ width, height, style, borderRadius = 4 }) => (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: colors.white + "40",
+          borderRadius,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View style={styles.headerContainer}>
+      <LinearGradient
+        colors={[colors.background, colors.primary + "80", colors.primary]}
+        start={{ x: 0.5, y: 1 }}
+        end={{ x: 0.5, y: 0 }}
+        style={styles.headerGradient}
+      >
+        <SafeAreaView style={styles.header}>
+          <View style={styles.headerContent}>
+            <View style={styles.separate}>
+              <SkeletonItem width={120} height={24} borderRadius={4} />
+              <SkeletonItem width={30} height={30} borderRadius={15} />
+            </View>
+            <View style={styles.creditHeader}>
+              <SkeletonItem
+                width={100}
+                height={16}
+                style={{ marginRight: 8 }}
+              />
+              <SkeletonItem width={20} height={20} borderRadius={10} />
+            </View>
+            <View style={styles.creditAmountContainer}>
+              <SkeletonItem width={180} height={32} borderRadius={4} />
+            </View>
+            <SkeletonItem width={100} height={44} borderRadius={8} />
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+    </View>
+  );
+};
+
+const SkeletonQuickAction = ({ colors }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  const SkeletonItem = ({ width, height, style, borderRadius = 4 }) => (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: colors.textLight + "20",
+          borderRadius,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View style={styles.quickActionCard}>
+      <SkeletonItem
+        width={56}
+        height={56}
+        borderRadius={12}
+        style={{ marginBottom: 8 }}
+      />
+      <SkeletonItem width={80} height={14} borderRadius={4} />
+    </View>
+  );
+};
+
+const SkeletonPromoCard = ({ colors }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  const SkeletonItem = ({ width, height, style, borderRadius = 4 }) => (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: colors.textLight + "20",
+          borderRadius,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View
+      style={[
+        styles.promoCard,
+        { backgroundColor: colors.surface, marginRight: 12 },
+      ]}
+    >
+      <SkeletonItem width="100%" height={120} borderRadius={12} />
+      <View style={styles.promoInfo}>
+        <SkeletonItem width={150} height={18} style={{ marginBottom: 8 }} />
+        <SkeletonItem width="100%" height={14} style={{ marginBottom: 4 }} />
+        <SkeletonItem width="80%" height={14} style={{ marginBottom: 8 }} />
+        <SkeletonItem width={100} height={12} />
+      </View>
+    </View>
+  );
+};
+
+const SkeletonBillCard = ({ colors }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(animatedValue, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(animatedValue, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    animation.start();
+
+    return () => animation.stop();
+  }, []);
+
+  const opacity = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 0.7],
+  });
+
+  const SkeletonItem = ({ width, height, style, borderRadius = 4 }) => (
+    <Animated.View
+      style={[
+        {
+          width,
+          height,
+          backgroundColor: colors.textLight + "20",
+          borderRadius,
+          opacity,
+        },
+        style,
+      ]}
+    />
+  );
+
+  return (
+    <View
+      style={[
+        styles.billCard,
+        {
+          backgroundColor: colors.surface,
+          borderLeftWidth: 4,
+          borderLeftColor: colors.textLight + "20",
+          marginBottom: 12,
+        },
+      ]}
+    >
+      <View style={styles.billInfo}>
+        <View style={styles.billDetails}>
+          <SkeletonItem width={180} height={18} style={{ marginBottom: 8 }} />
+          <SkeletonItem width={140} height={14} />
+        </View>
+        <View style={styles.billRight}>
+          <SkeletonItem width={80} height={20} style={{ marginBottom: 4 }} />
+          <SkeletonItem width={60} height={12} />
+        </View>
+      </View>
+      <SkeletonItem width="100%" height={44} borderRadius={8} />
+    </View>
+  );
+};
+
+const SkeletonBillsSection = ({ colors }) => {
+  return (
+    <View>
+      {/* Header with skeleton */}
+      <View style={styles.billsHeader}>
+        <View
+          style={{
+            width: 150,
+            height: 22,
+            backgroundColor: colors.textLight + "20",
+            borderRadius: 4,
+          }}
+        />
+      </View>
+
+      {/* 3 skeleton bills - matches actual UI */}
+      {[1, 2, 3].map((_, index) => (
+        <SkeletonBillCard key={`skeleton-bill-${index}`} colors={colors} />
+      ))}
+    </View>
+  );
+};
+
+// No Internet Connection Component
+const NoInternetView = ({ colors, onRetry, user }) => {
+  // Get theme mode from context
+  const { mode } = useTheme();
+  const systemColorScheme = useColorScheme();
+  const effectiveMode = mode === "system" ? systemColorScheme : mode;
+
+  const getGradientColors = () => {
+    if (effectiveMode === "dark") {
+      return ["#121212", "#1a4a4b", "#2d6c6d"];
+    } else {
+      return ["#F5F8FA", "#21C7B9", "#65f1e8"];
+    }
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="transparent"
+        translucent={true}
+      />
+
+      {/* Header with Gradient Background */}
+      <View style={styles.headerContainer}>
+        <LinearGradient
+          colors={getGradientColors()}
+          start={{ x: 0.5, y: 1 }}
+          end={{ x: 0.5, y: 0 }}
+          style={styles.headerGradient}
+        >
+          <SafeAreaView style={styles.header}>
+            <View style={styles.headerContent}>
+              <View style={styles.separate}>
+                <Text style={styles.welcomeText}>
+                  Hi {user?.name?.split(" ")[0]?.toUpperCase() || "GUEST"},
+                </Text>
+                <View style={styles.notificationIconContainer}>
+                  <Ionicons name="mail-outline" size={30} color="#fff" />
+                </View>
+              </View>
+              <View style={styles.creditHeader}>
+                <Text style={[styles.creditLabel, { color: colors.white }]}>
+                  CREDIT BALANCE
+                </Text>
+              </View>
+              <View style={styles.creditAmountContainer}>
+                <Text style={[styles.hiddenAmount, { color: colors.white }]}>
+                  ••••••••
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.addCreditButton,
+                  { backgroundColor: colors.primary, opacity: 0.5 },
+                ]}
+              >
+                <Ionicons name="add-circle" size={20} color="#FFF" />
+                <Text style={styles.addCreditText}>Add Credit</Text>
+              </View>
+            </View>
+          </SafeAreaView>
+        </LinearGradient>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.noInternetContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.noInternetContainer}>
+          <View
+            style={[
+              styles.noInternetIconContainer,
+              { backgroundColor: colors.danger + "20" },
+            ]}
+          >
+            <Ionicons
+              name="cloud-offline-outline"
+              size={80}
+              color={colors.danger}
+            />
+          </View>
+
+          <Text style={[styles.noInternetTitle, { color: colors.text }]}>
+            No Internet Connection
+          </Text>
+
+          <Text style={[styles.noInternetMessage, { color: colors.textLight }]}>
+            Please check your internet connection and try again.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={onRetry}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={20} color={colors.white} />
+            <Text style={[styles.retryButtonText, { color: colors.white }]}>
+              Try Again
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
+  );
 };
 
 const Home = () => {
@@ -50,42 +445,11 @@ const Home = () => {
   const [userCredit, setUserCredit] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [announcements, setAnnouncements] = useState([]);
+  const [isConnected, setIsConnected] = useState(true);
+  const [checkingConnection, setCheckingConnection] = useState(true);
 
   // Determine effective theme mode
   const effectiveMode = mode === "system" ? systemColorScheme : mode;
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchHomeData(); // this calls /api/app/home
-    }, []),
-  );
-
-  useEffect(() => {
-    const loadShowAmount = async () => {
-      try {
-        const saved = await AsyncStorage.getItem("showAmount");
-        if (saved !== null) {
-          setShowAmount(JSON.parse(saved));
-        }
-      } catch (e) {
-        console.log("Failed to load showAmount", e);
-      }
-    };
-
-    loadShowAmount();
-  }, []);
-
-  useEffect(() => {
-    const hasUnreadAnnouncement = announcements.some(
-      (ann) => ann.read_at === null,
-    );
-
-    // If there are unread announcements OR unread notifications, show the red dot
-    if (hasUnreadAnnouncement || unreadNotifications > 0) {
-      // You might want to set this state if you have it elsewhere
-      // For now, we'll handle it in the mail icon directly
-    }
-  }, [announcements, unreadNotifications]);
 
   // Define colors based on theme
   const COLORS = {
@@ -108,7 +472,6 @@ const Home = () => {
       announcementBg: "#FFF5F5",
       announcementBorder: "#FF6B6B",
       billCardBg: "#FFFFFF",
-      // Gradient colors - Matching Security/About screens
       gradientStart: "#98eced",
       gradientAlt1: "#65f1e8",
       gradientEnd: "#21c7c1",
@@ -136,7 +499,6 @@ const Home = () => {
       announcementBg: "#2A1A1A",
       announcementBorder: "#FF6B6B",
       billCardBg: "#1E1E1E",
-      // Gradient colors (darker version)
       gradientStart: "#000000",
       gradientEnd: "#032829",
       gradientAlt: "#0b1515",
@@ -149,30 +511,13 @@ const Home = () => {
 
   const colors = COLORS[effectiveMode === "dark" ? "dark" : "light"];
 
-  // Gradient colors for header (bottom to top)
-  const getHeaderGradientColors = () => {
-    if (effectiveMode === "dark") {
-      return [
-        "#121212", // Darker at bottom
-        "#1a4a4b", // Medium
-        "#2d6c6d", // Lighter at top
-      ];
-    } else {
-      return [
-        "#F5F8FA", // Darker at bottom
-        "#21C7B9", // Primary color in middle
-        "#65f1e8", // Lighter at top
-      ];
-    }
-  };
-
   const [alertConfig, setAlertConfig] = useState({
-  visible: false,
-  title: "",
-  message: "",
-  type: "error",
-  onConfirm: null,
-});
+    visible: false,
+    title: "",
+    message: "",
+    type: "error",
+    onConfirm: null,
+  });
 
   // Static promo images from assets
   const staticPromos = [
@@ -228,128 +573,190 @@ const Home = () => {
     },
   ];
 
-  // Fetch all data from the single /api/app/home endpoint
-const fetchHomeData = async (isRefresh = false) => {
-  if (!user?.branch?.subdomain) {
-    console.warn("User branch not loaded yet");
-    return;
-  }
+  // Check network connection
+  const checkNetworkConnection = async () => {
+    try {
+      const state = await NetInfo.fetch();
+      const connected = state.isConnected && state.isInternetReachable;
 
-  const fetchWithTimeout = (url, options, timeout = 10000) =>
-    Promise.race([
-      fetch(url, options),
-      new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error("Server timeout. Please try again later.")
-            ),
-          timeout
-        )
-      ),
-    ]);
+      // If connection is restored, dismiss any existing alert
+      if (connected && alertConfig.visible) {
+        setAlertConfig((prev) => ({ ...prev, visible: false }));
+      }
 
-  try {
-    if (!isRefresh) setLoadingBills(true);
-    else setRefreshing(true);
-
-    const token = await AsyncStorage.getItem("token");
-
-    if (!token) {
-      throw new Error("Authentication required.");
+      setIsConnected(connected);
+      return connected;
+    } catch (error) {
+      console.log("Error checking network:", error);
+      setIsConnected(false);
+      return false;
+    } finally {
+      setCheckingConnection(false);
     }
+  };
 
-    const subdomain = user.branch.subdomain;
+  useFocusEffect(
+    useCallback(() => {
+      const loadData = async () => {
+        const connected = await checkNetworkConnection();
+        if (connected) {
+          fetchHomeData();
+        } else {
+          setLoadingBills(false);
+        }
+      };
+      loadData();
+    }, []),
+  );
 
-    const response = await fetchWithTimeout(
-      `https://${subdomain}.kazibufastnet.com/api/app/home`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-      },
-      10000
+  useEffect(() => {
+    const loadShowAmount = async () => {
+      try {
+        const saved = await AsyncStorage.getItem("showAmount");
+        if (saved !== null) {
+          setShowAmount(JSON.parse(saved));
+        }
+      } catch (e) {
+        console.log("Failed to load showAmount", e);
+      }
+    };
+
+    loadShowAmount();
+  }, []);
+
+  useEffect(() => {
+    const hasUnreadAnnouncement = announcements.some(
+      (ann) => ann.read_at === null,
     );
+  }, [announcements, unreadNotifications]);
 
-    // 🔴 STATUS HANDLING
-
-    if (response.status === 401) {
-      await AsyncStorage.removeItem("token");
-
-      setAlertConfig({
-        visible: true,
-        title: "Session Expired",
-        message: "Your session has expired. Please log in again.",
-        type: "error",
-        onConfirm: () => {
-          setAlertConfig((prev) => ({ ...prev, visible: false }));
-          router.replace("/(auth)/login");
-        },
-      });
-
+  // Fetch all data from the single /api/app/home endpoint
+  const fetchHomeData = async (isRefresh = false) => {
+    if (!user?.branch?.subdomain) {
+      console.warn("User branch not loaded yet");
       return;
     }
 
-    if (response.status === 404) {
-      throw new Error("API endpoint not found.");
+    // Check connection before fetching
+    const connected = await checkNetworkConnection();
+    if (!connected) {
+      setAlertConfig({
+        visible: true,
+        title: "No Internet Connection",
+        message: "Please check your internet connection and try again.",
+        type: "warning",
+        onConfirm: () =>
+          setAlertConfig((prev) => ({ ...prev, visible: false })),
+      });
+      setLoadingBills(false);
+      setRefreshing(false);
+      return;
     }
 
-    if (response.status >= 500) {
-      throw new Error(
-        "There is something wrong on our server. Please try again later."
+    const fetchWithTimeout = (url, options, timeout = 10000) =>
+      Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Server timeout. Please try again later.")),
+            timeout,
+          ),
+        ),
+      ]);
+
+    try {
+      if (!isRefresh) setLoadingBills(true);
+      else setRefreshing(true);
+
+      const token = await AsyncStorage.getItem("token");
+
+      if (!token) {
+        throw new Error("Authentication required.");
+      }
+
+      const subdomain = user.branch.subdomain;
+
+      const response = await fetchWithTimeout(
+        `https://${subdomain}.kazibufastnet.com/api/app/home`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        },
+        10000,
       );
+
+      if (response.status === 401) {
+        await AsyncStorage.removeItem("token");
+
+        setAlertConfig({
+          visible: true,
+          title: "Session Expired",
+          message: "Your session has expired. Please log in again.",
+          type: "error",
+          onConfirm: () => {
+            setAlertConfig((prev) => ({ ...prev, visible: false }));
+            router.replace("/(auth)/login");
+          },
+        });
+
+        return;
+      }
+
+      if (response.status === 404) {
+        throw new Error("API endpoint not found.");
+      }
+
+      if (response.status >= 500) {
+        throw new Error(
+          "There is something wrong on our server. Please try again later.",
+        );
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "Failed to fetch home data.");
+      }
+
+      const data = await response.json();
+
+      // ✅ SAFE DATA
+      setUnreadNotifications(data?.notifications ?? 0);
+      setUserCredit(data?.user?.credit_points ?? 0);
+      setAnnouncements(
+        Array.isArray(data?.announcement) ? data.announcement : [],
+      );
+      processBillingsData(Array.isArray(data?.billings) ? data.billings : []);
+    } catch (err) {
+      let errorMessage = err.message;
+
+      if (err.message === "Network request failed") {
+        errorMessage =
+          "No internet connection. Please check your network and try again.";
+        setIsConnected(false);
+      }
+
+      if (!isRefresh) {
+        showMockData();
+      }
+
+      setUpcomingBills([]);
+
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: errorMessage,
+        type: "error",
+        onConfirm: () =>
+          setAlertConfig((prev) => ({ ...prev, visible: false })),
+      });
+    } finally {
+      setLoadingBills(false);
+      setRefreshing(false);
     }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || "Failed to fetch home data.");
-    }
-
-    const data = await response.json();
-
-    // ✅ SAFE DATA
-    setUnreadNotifications(data?.notifications ?? 0);
-    setUserCredit(data?.user?.credit_points ?? 0);
-    setAnnouncements(
-      Array.isArray(data?.announcement) ? data.announcement : []
-    );
-    processBillingsData(
-      Array.isArray(data?.billings) ? data.billings : []
-    );
-
-  } catch (err) {
-    
-
-    let errorMessage = err.message;
-
-    if (err.message === "Network request failed") {
-      errorMessage =
-        "No internet connection. Please check your network and try again.";
-    }
-
-    if (!isRefresh) {
-      showMockData();
-    }
-
-    setUpcomingBills([]);
-
-    // 🔥 USE CUSTOM ALERT FOR ALL ERRORS
-    setAlertConfig({
-      visible: true,
-      title: "Error",
-      message: errorMessage,
-      type: "error",
-      onConfirm: () =>
-        setAlertConfig((prev) => ({ ...prev, visible: false })),
-    });
-
-  } finally {
-    setLoadingBills(false);
-    setRefreshing(false);
-  }
-};
+  };
 
   // Process billings data from the API
   const processBillingsData = (billings) => {
@@ -396,7 +803,6 @@ const fetchHomeData = async (isRefresh = false) => {
           status_text,
           priority,
           reference_number: bill.reference_number,
-          // Include other billing details if needed
           ...bill,
         };
       })
@@ -455,12 +861,20 @@ const fetchHomeData = async (isRefresh = false) => {
     ];
 
     setUpcomingBills(mockBills);
-    setUnreadNotifications(2); // Mock notifications count
-    setUserCredit(182246513487.23); // Mock credit points
+    setUnreadNotifications(2);
+    setUserCredit(182246513487.23);
   };
 
   useEffect(() => {
-    fetchHomeData(false);
+    const initializeData = async () => {
+      const connected = await checkNetworkConnection();
+      if (connected) {
+        fetchHomeData(false);
+      } else {
+        setLoadingBills(false);
+      }
+    };
+    initializeData();
   }, [user]);
 
   const formatDate = (dateString) => {
@@ -480,7 +894,7 @@ const fetchHomeData = async (isRefresh = false) => {
       case "due_today":
         return colors.warning;
       case "due_soon":
-        return "#FF9800"; // Orange
+        return "#FF9800";
       default:
         return colors.success;
     }
@@ -532,13 +946,169 @@ const fetchHomeData = async (isRefresh = false) => {
     }
   };
 
-  const PROMO_CARD_WIDTH = 280 + 12; // card width + marginRight
+  const PROMO_CARD_WIDTH = 280 + 12;
   const [promoIndex, setPromoIndex] = useState(0);
 
   // Check if there are unread announcements
   const hasUnreadAnnouncements = announcements.some(
     (ann) => ann.read_at === null,
   );
+
+  const handleRetry = async () => {
+    setCheckingConnection(true);
+    const connected = await checkNetworkConnection();
+    if (connected) {
+      setLoadingBills(true);
+      await fetchHomeData(false);
+    } else {
+      setAlertConfig({
+        visible: true,
+        title: "No Internet Connection",
+        message: "Please check your internet connection and try again.",
+        type: "warning",
+        onConfirm: () =>
+          setAlertConfig((prev) => ({ ...prev, visible: false })),
+      });
+    }
+    setCheckingConnection(false);
+  };
+
+  // Show no internet view if not connected
+  if (!isConnected && !loadingBills && !refreshing) {
+    return <NoInternetView colors={colors} onRetry={handleRetry} user={user} />;
+  }
+
+  // Show skeleton on initial load OR during refresh
+  if (loadingBills || refreshing) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor="transparent"
+          translucent={true}
+        />
+
+        {/* Skeleton Credit Header */}
+        <SkeletonCreditHeader colors={colors} />
+
+        <Animated.ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                fetchHomeData(true);
+              }}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+            />
+          }
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: false },
+          )}
+        >
+          {/* How can we help you today? Section */}
+          <View style={styles.sectionContainer}>
+            {/* Section Title Skeleton */}
+            <View
+              style={{
+                width: 200,
+                height: 22,
+                backgroundColor: colors.textLight + "20",
+                borderRadius: 4,
+                marginBottom: 16,
+              }}
+            />
+
+            {/* Quick Actions Skeleton Grid */}
+            <View style={styles.quickActionsContainer}>
+              {quickActionRows.map((row, rowIndex) => (
+                <View key={rowIndex} style={styles.quickActionsRow}>
+                  {row.map((_, index) => (
+                    <SkeletonQuickAction
+                      key={`skeleton-${rowIndex}-${index}`}
+                      colors={colors}
+                    />
+                  ))}
+                  {/* Fill empty spaces in last row if needed */}
+                  {rowIndex === quickActionRows.length - 1 &&
+                    row.length < 3 &&
+                    Array.from({ length: 3 - row.length }).map((_, i) => (
+                      <View key={`empty-${i}`} style={styles.emptyActionCard} />
+                    ))}
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Promos Section Skeleton */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.promosHeader}>
+              {/* Section Title Skeleton */}
+              <View
+                style={{
+                  width: 100,
+                  height: 22,
+                  backgroundColor: colors.textLight + "20",
+                  borderRadius: 4,
+                }}
+              />
+              {/* "See all" Skeleton */}
+              <View
+                style={{
+                  width: 50,
+                  height: 20,
+                  backgroundColor: colors.textLight + "20",
+                  borderRadius: 4,
+                }}
+              />
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.promosScroll}
+            >
+              {[1, 2, 3].map((_, index) => (
+                <SkeletonPromoCard
+                  key={`skeleton-promo-${index}`}
+                  colors={colors}
+                />
+              ))}
+            </ScrollView>
+
+            {/* Skeleton Pagination Dots */}
+            <View style={styles.paginationContainer}>
+              {[1, 2, 3, 4].map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.paginationDot,
+                    {
+                      backgroundColor: colors.textLight + "20",
+                      width: index === 0 ? 20 : 8,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+          </View>
+
+          {/* Upcoming Bills Section Skeleton - Compact Version */}
+          <View style={styles.sectionContainer}>
+            <SkeletonBillsSection colors={colors} />
+          </View>
+
+          {/* Footer Spacer */}
+          <View style={styles.bottomSpacer} />
+        </Animated.ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -551,9 +1121,9 @@ const fetchHomeData = async (isRefresh = false) => {
       {/* Header with Gradient Background (Bottom to Top) */}
       <View style={styles.headerContainer}>
         <LinearGradient
-          colors={getHeaderGradientColors()}
-          start={{ x: 0.5, y: 1 }} // Start at bottom
-          end={{ x: 0.5, y: 0 }} // End at top
+          colors={getHeaderGradientColors(effectiveMode)}
+          start={{ x: 0.5, y: 1 }}
+          end={{ x: 0.5, y: 0 }}
           style={styles.headerGradient}
         >
           <SafeAreaView style={styles.header}>
@@ -571,7 +1141,6 @@ const fetchHomeData = async (isRefresh = false) => {
                   <View style={styles.notificationIconContainer}>
                     <Ionicons name="mail-outline" size={30} color="#fff" />
 
-                    {/* Show red dot if there are unread notifications OR unread announcements */}
                     {(unreadNotifications > 0 || hasUnreadAnnouncements) && (
                       <View style={styles.redDot}>
                         <Text style={styles.redDotText}>
@@ -651,7 +1220,6 @@ const fetchHomeData = async (isRefresh = false) => {
             How can we help you today?
           </Text>
 
-          {/* Quick Actions Grid with rows of 3 */}
           <View style={styles.quickActionsContainer}>
             {quickActionRows.map((row, rowIndex) => (
               <View key={rowIndex} style={styles.quickActionsRow}>
@@ -686,7 +1254,6 @@ const fetchHomeData = async (isRefresh = false) => {
                     </Text>
                   </TouchableOpacity>
                 ))}
-                {/* Fill empty spaces in last row if needed */}
                 {rowIndex === quickActionRows.length - 1 &&
                   row.length < 3 &&
                   Array.from({ length: 3 - row.length }).map((_, i) => (
@@ -697,19 +1264,17 @@ const fetchHomeData = async (isRefresh = false) => {
           </View>
         </View>
 
-        {/* Promos Section with Static Images */}
+        {/* Promos Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.promosHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Promos
             </Text>
-            {/* <TouchableOpacity
-              onPress={() => router.push("/(role)/(clienttabs)/home")}
-            >
+            <TouchableOpacity onPress={() => router.push("/(role)/(promo)")}>
               <Text style={[styles.seeAllText, { color: colors.primary }]}>
                 See all
               </Text>
-            </TouchableOpacity> */}
+            </TouchableOpacity>
           </View>
 
           <ScrollView
@@ -730,10 +1295,7 @@ const fetchHomeData = async (isRefresh = false) => {
               <TouchableOpacity
                 key={promo.id}
                 style={[styles.promoCard, { backgroundColor: colors.surface }]}
-                onPress={() =>
-                  // router.push(`/(role)/(promos)/promo-details?id=${promo.id}`)
-                  router.push(`/(role)/(clienttabs)/home`)
-                }
+                onPress={() => router.push(`/(role)/(clienttabs)/home`)}
               >
                 <Image
                   source={promo.image}
@@ -760,7 +1322,6 @@ const fetchHomeData = async (isRefresh = false) => {
             ))}
           </ScrollView>
 
-          {/* dots */}
           <View style={styles.paginationContainer}>
             {staticPromos.map((_, index) => (
               <View
@@ -795,21 +1356,12 @@ const fetchHomeData = async (isRefresh = false) => {
           )}
         </View>
 
-        {/* Upcoming Bills Section with Categorized Status */}
+        {/* Upcoming Bills Section */}
         <View style={styles.sectionContainer}>
           <View style={styles.billsHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Upcoming Bills
             </Text>
-            {/* {upcomingBills.length > 0 && (
-              <TouchableOpacity
-                onPress={() => router.push("/(role)/(clienttabs)/billing")}
-              >
-                <Text style={[styles.seeAllText, { color: colors.primary }]}>
-                  See all
-                </Text>
-              </TouchableOpacity>
-            )} */}
           </View>
 
           {loadingBills ? (
@@ -834,7 +1386,6 @@ const fetchHomeData = async (isRefresh = false) => {
             </View>
           ) : (
             <View>
-              {/* Show categorized bills with status headers */}
               {["overdue", "due_today", "due_soon", "upcoming"].map(
                 (category) => {
                   const categoryBills = upcomingBills.filter(
@@ -879,7 +1430,7 @@ const fetchHomeData = async (isRefresh = false) => {
                                 pathname: "/(role)/(clienttabs)/subscriptions",
                                 params: {
                                   focusSubscriptionId: bill.subscription_id,
-                                  focusBillingId: bill.id, // optional but recommended
+                                  focusBillingId: bill.id,
                                 },
                               })
                             }
@@ -943,7 +1494,6 @@ const fetchHomeData = async (isRefresh = false) => {
                                 </View>
                               </View>
 
-                              {/* PAY NOW BUTTON (separate press) */}
                               <TouchableOpacity
                                 activeOpacity={0.9}
                                 style={[
@@ -956,7 +1506,7 @@ const fetchHomeData = async (isRefresh = false) => {
                                   },
                                 ]}
                                 onPress={(e) => {
-                                  e.stopPropagation(); // 🔥 VERY IMPORTANT
+                                  e.stopPropagation();
                                   router.push(
                                     "/(role)/(clienttabs)/subscriptions",
                                   );
@@ -979,14 +1529,22 @@ const fetchHomeData = async (isRefresh = false) => {
             </View>
           )}
 
-          <CustomAlert {...alertConfig} /> 
+          <CustomAlert {...alertConfig} />
         </View>
 
-        {/* Footer Spacer */}
         <View style={styles.bottomSpacer} />
       </Animated.ScrollView>
     </View>
   );
+};
+
+// Gradient colors helper function - moved outside component but before styles
+const getHeaderGradientColors = (effectiveMode) => {
+  if (effectiveMode === "dark") {
+    return ["#121212", "#1a4a4b", "#2d6c6d"];
+  } else {
+    return ["#F5F8FA", "#21C7B9", "#65f1e8"];
+  }
 };
 
 const styles = StyleSheet.create({
@@ -1004,7 +1562,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  // Header Container with Gradient
   headerContainer: {
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
@@ -1024,7 +1581,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginBottom: 20,
   },
-  // Scroll View
   scrollView: {
     flex: 1,
   },
@@ -1057,7 +1613,6 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     top: 20,
   },
-  // Notification Icon with red dot
   notificationIconContainer: {
     position: "relative",
     top: 10,
@@ -1102,7 +1657,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  // Sections
   sectionContainer: {
     marginTop: 10,
     marginBottom: 24,
@@ -1113,7 +1667,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 16,
   },
-  // Quick Actions with rows
   quickActionsContainer: {
     marginBottom: 1,
   },
@@ -1149,7 +1702,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
-  // Promos Section
   promosHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1207,7 +1759,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  // Bills Section
   billsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1218,7 +1769,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  // Bill Categories
   categoryTitle: {
     fontSize: 12,
     fontWeight: "700",
@@ -1230,7 +1780,6 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     borderWidth: 1,
   },
-  // No Bills
   noBillsCard: {
     borderRadius: 12,
     padding: 30,
@@ -1242,7 +1791,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 8,
   },
-  // Bill Card
   billCard: {
     borderRadius: 8,
     padding: 16,
@@ -1288,7 +1836,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  // Loading
   loadingContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1299,9 +1846,60 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
   },
-  // Footer
   bottomSpacer: {
     height: 20,
+  },
+  noInternetContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 50,
+    paddingBottom: 40,
+  },
+  noInternetContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+  },
+  noInternetIconContainer: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  noInternetTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  noInternetMessage: {
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 32,
+    lineHeight: 22,
+    paddingHorizontal: 20,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
 
